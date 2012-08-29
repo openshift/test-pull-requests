@@ -236,7 +236,7 @@ module Hub
         branch_settings = settings['branches'][branch]
         if branch_settings[:image_base_name]
           image = "#{branch_settings[:image_base_name]}_#{JenkinsAPI.get_next_build(branch, settings, branch_settings['downstream_job_name'])}"
-          comment += "\nAMI: #{image}"
+          comment += "\nImage: #{image}"
         end
       rescue Exception => e
         $stderr.puts e.message
