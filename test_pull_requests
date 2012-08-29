@@ -582,13 +582,13 @@ popd
               end
             end
           when /^#{settings['test_prefix']} Running \((.*)\)/
-            $stderr.puts "Running..."
             # This state means that the tests are already running
             # In this case we need to poll Jenkins to see if the build
             # is finished
 
             # Capture the build_url from the regex match
             build_url = $1
+            $stderr.puts "Running: #{build_url}console"
 
             # If the build is finished, update with the results
             if JenkinsAPI.is_build_running?(build_url, branch, settings)
