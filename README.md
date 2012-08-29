@@ -18,10 +18,10 @@ Utility for serially testing then merging pull requests in conjunction with Jenk
 
 
 ## Setup
- * Add test_pull_requests to you jenkins system and make sure it's executable
+ * Add test_pull_requests to your Jenkins system and make sure it's executable
  * Add .test_pull_requests.json to $JENKINS_HOME
  * Configure .test_pull_requests.json according to your system.  You can decide whether to support [test] and/or [merge] as well as potentially add other flags for your use cases.
- * For each test group you'll then need to configure your jenkins to have a corresponding set of jobs.  The general requirements are:
+ * For each test group you'll then need to configure your Jenkins to have a corresponding set of jobs.  The general requirements are:
    * A downstream job (typically kicked off after the test job completes) that indicates whether there is a larger problem in your system and merges and/or tests can't take place currently
    * A [test] job should:
      * Setup an environment based on the current state of master + the pull request(s).  To perform the merge of the pull request you can use: test_pull_requests --local_merge_pull_request $PULL_ID --repo $REPO
@@ -31,4 +31,4 @@ Utility for serially testing then merging pull requests in conjunction with Jenk
      * Run any desired tests to prove the build and tests will pass if merged
      * Verify each tested pull request is still mergeable with: test_pull_requests --test_merge_pull_request $PULL_ID --repo $REPO
      * Merge each tested pull request with: test_pull_requests --merge_pull_request $PULL_ID --repo $REPO
- * Run test_pull_requests as a jenkins or cron job.  Note that GitHub is rate limited but typical projects can still run this script every few mins without running out of requests.
+ * Run test_pull_requests as a Jenkins or cron job.  Note that GitHub is rate limited but typical projects can still run this script every few mins without running out of requests.
