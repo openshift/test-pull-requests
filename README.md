@@ -13,7 +13,7 @@ Utility for serially testing then merging pull requests in conjunction with Jenk
  * Similar to the [test] flag above, you must add the [merge] flag to the title or a comment of the pull request.  This is the only way you should be getting your changes into the master or stage branches.  The merge flag (handles prereqs the same as [test]) builds and installs your changes with the exact source on master that passed the previous tests. This is done serially so your changes are the only changes since the last successful build. After the tests pass your pull request(s) (including prereqs in comments) are merged into master. Note if you make changes to your pull request(s) after tests start your merge will fail and the tests will be retried. 
 
 ### Permissions
- * [merge] and [test] flags are only listened to for trusted users and (in comments or titles) and are only supported for the configured branches.
+ * [merge] and [test] flags are only listened to for trusted users (in comments or titles) and are only supported for the configured branches.
  * Retries will automatically occur if a pull request is updated after a failure as long as the owner of the pull request is trusted.  So for example, if you tag a pull request with [merge] for a non trusted user, then they add code to the commit. It will fail on merge because they updated after the tests were started and will not retry until another [merge] tag is added/updated by a trusted user.  Trusted users are determined per test group and you can have multiple GitHub teams assigned to the same repo.
 
 
