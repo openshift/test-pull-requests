@@ -32,3 +32,10 @@ Utility for serially testing then merging pull requests in conjunction with Jenk
      * Verify each tested pull request is still mergeable with: test_pull_requests --test_merge_pull_request $PULL_ID --repo $REPO
      * Merge each tested pull request with: test_pull_requests --merge_pull_request $PULL_ID --repo $REPO
  * Run test_pull_requests as a Jenkins or cron job.  Note that GitHub is rate limited but typical projects can still run this script every few mins without running out of requests.
+ 
+
+Copyright
+----------------------
+
+OpenShift Origin, except where otherwise noted, is released under the
+[Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0.html).
