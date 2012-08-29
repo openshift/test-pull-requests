@@ -11,7 +11,7 @@
 #   sudo gem install hub
 #
 # This has to be manually run one time to establish an OAuth
-# ticket.  The user in .test_pull_requests.json is list as bot_github_user
+# ticket.  The user setting in .test_pull_requests.json is bot_github_user
 
 require 'rubygems'
 require 'hub'
