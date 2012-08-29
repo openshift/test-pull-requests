@@ -228,7 +228,7 @@ module Hub
     def merge_pull_request(pull_id, repo, settings)
       $stderr.puts "Merging pull request ##{pull_id} for repo '#{repo}'"
       pull_request, bot_comment = test_merge_pull_request(pull_id, repo, settings)
-      build_url = /^#{settings['test_prefix']}: Running \((.*)\)/.match(bot_comment['body'])[1]
+      build_url = /^#{settings['test_prefix']} Running \((.*)\)/.match(bot_comment['body'])[1]
 
       comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
       begin
@@ -580,7 +580,7 @@ popd
                 $stderr.puts "Job is already queued"
               end
             end
-          when /^#{settings['test_prefix']}: Running \((.*)\)/
+          when /^#{settings['test_prefix']} Running \((.*)\)/
             $stderr.puts "Running..."
             # This state means that the tests are already running
             # In this case we need to poll Jenkins to see if the build
