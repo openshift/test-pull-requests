@@ -129,6 +129,7 @@ module Hub
       (1..num_tries).each do |i|
         pull_request = get_pull_request(id, repo)
         return true if pull_request['mergeable']
+        sleep 10
       end
       return false
     end
@@ -258,7 +259,7 @@ module Hub
       pull_request = get_pull_request(pull_id, repo)
       mergeable = pull_request['mergeable']
       # This call isn't reliable so make sure
-      mergeable = is_mergeable?(pull_id, repo, 2) unless mergeable 
+      mergeable = is_mergeable?(pull_id, repo, 10) unless mergeable 
       raise "Pull request isn't mergeable!" unless mergeable
       pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, comments)
       unless !pull_request_changed_after_eval
