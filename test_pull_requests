@@ -21,7 +21,7 @@ require 'getoptlong'
 require 'time'
 
 def usage
-    puts <<USAGE
+  puts <<USAGE
 Usage: test_pull_requests [--help] [--merge_pull_request <pull_id>] [--local_merge_pull_request <pull_id>] [--test_pull_request <pull_id>] [--repo <repo>]
 
 This will process all the setting specified pull requests and submit
@@ -42,11 +42,11 @@ USAGE
 end
 
 opts = GetoptLong.new(
-    ["--help",               "-h", GetoptLong::NO_ARGUMENT],
-    ["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
-    ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
-    ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
-    ["--repo",                     GetoptLong::REQUIRED_ARGUMENT]
+  ["--help",               "-h", GetoptLong::NO_ARGUMENT],
+  ["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
+  ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
+  ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
+  ["--repo",                     GetoptLong::REQUIRED_ARGUMENT]
 )
 
 args = {}
@@ -234,8 +234,8 @@ module Hub
       begin
         branch = pull_request['base']['ref']
         branch_settings = settings['branches'][branch]
-        if branch_settings[:image_base_name]
-          image = "#{branch_settings[:image_base_name]}_#{JenkinsAPI.get_next_build(branch, settings, branch_settings['downstream_job_name'])}"
+        if branch_settings['image_base_name']
+          image = "#{branch_settings['image_base_name']}_#{JenkinsAPI.get_next_build(branch, settings, branch_settings['downstream_job_name'])}"
           comment += "\nImage: #{image}"
         end
       rescue Exception => e
