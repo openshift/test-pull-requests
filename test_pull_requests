@@ -552,7 +552,7 @@ popd
                 create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
               end
             else
-              updated_comment = "#{settings['test_prefix']} Waiting for stable build"
+              updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
             end
           when /^#{settings['test_prefix']} Waiting/
             $stderr.puts "Waiting..."
@@ -601,7 +601,11 @@ popd
           else
             $stderr.puts "Finished..."
             $stderr.puts comment if comment =~ /^#{settings['test_prefix']} .+ \((.*)\)/
-            resubmit_test_job = true if JenkinsAPI.is_project_stable?(branch, settings)
+            if JenkinsAPI.is_project_stable?(branch, settings)
+              resubmit_test_job = true
+            else
+              updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
+            end
         end
         if resubmit_test_job
           submit_test_job = false
