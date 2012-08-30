@@ -124,12 +124,12 @@ module Hub
       res.data
     end
 
-    def is_mergeable?(id, repo, num_tries=1)
+    def is_mergeable?(id, repo, num_tries=2)
       # This call isn't reliable so make sure
       (1..num_tries).each do |i|
         pull_request = get_pull_request(id, repo)
         return true if pull_request['mergeable']
-        sleep 10
+        sleep 10 if i > 1
       end
       return false
     end
