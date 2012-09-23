@@ -128,8 +128,19 @@ module Hub
       # This call isn't reliable so make sure
       (1..num_tries).each do |i|
         pull_request = get_pull_request(id, repo)
-        return true if pull_request['mergeable']
-        sleep 10 if i > 1
+        mergeable = pull_request['mergeable']
+        # Mergeable has become unreliable.  Resort to mergeable state for now if nil.  
+        # TODO: Re-evaluate this at a later date
+        if mergeable.nil?
+          case pull_request['mergeable_state']
+            when 'checking', 'dirty', 'unstable'
+              mergeable = false
+            when 'unknown', 'clean', 'stable'
+              mergeable = !pull_request['merged']
+          end
+        end
+        return true if mergeable
+        sleep 10 if i > 1 && i < num_tries
       end
       return false
     end
