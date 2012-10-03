@@ -612,11 +612,7 @@ popd
           else
             $stderr.puts "Finished..."
             $stderr.puts comment if comment =~ /^#{settings['test_prefix']} .+ \((.*)\)/
-            if JenkinsAPI.is_project_stable?(branch, settings)
-              resubmit_test_job = true
-            else
-              updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
-            end
+            resubmit_test_job = true
         end
         if resubmit_test_job
           submit_test_job = false
@@ -625,7 +621,11 @@ popd
           if trigger_updated_at
             # We already trust the primary pull request.  Just need to check whether the eval time is older than last update or last trusted trigger.
             if changed_after_eval || (evaluated_time < trigger_updated_at)
-              submit_test_job = true
+              if JenkinsAPI.is_project_stable?(branch, settings)
+                submit_test_job = true
+              else
+                updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
+              end
             end
 
             # Check for any other reason to submit the test job.  And make sure non of the sub pull requests have new untrusted changes.
@@ -645,7 +645,11 @@ popd
               $stderr.puts "Has valid trigger comment: #{valid_trigger_comment}"
               if valid_trigger_comment || user_trusted?(sub_pull_request['user']['login'], repo, settings)
                 if sub_pull_request_changed_after_eval
-                  submit_test_job = true
+                  if JenkinsAPI.is_project_stable?(branch, settings)
+                    submit_test_job = true
+                  else
+                    updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
+                  end
                 end
               else
                 create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
