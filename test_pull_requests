@@ -187,6 +187,14 @@ module Hub
       res.error! unless res.success?
       res.data
     end
+    
+    def update_status(sha, repo, state, url, desc)
+      $stderr.puts "Updating status of '#{sha}' with state '#{state}'"
+      params = { :state => state, :target_url => url, :description => desc}
+      res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
+      res.error! unless res.success?
+      res.data
+    end
 
     # Verifies the user is part of Team Red Hat
     def user_trusted?(login, repo, settings)
