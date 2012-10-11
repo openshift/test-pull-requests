@@ -91,7 +91,7 @@ end
 
 $repo_to_pull_regex = {}
 $repos.each do |repo|
-  $repo_to_pull_regex[repo] = /https:\/\/github.com\/#{Properties['github_user']}\/#{repo}\/pull\/(\d+)/
+  $repo_to_pull_regex[repo] = /https:\/\/github.com\/#{Properties['github_user']}\/#{repo}\/(pull|issue)\/(\d+)/
 end
 
 ACTION_PREFIX               = "Action Required:"
@@ -530,7 +530,7 @@ popd
       $repo_to_pull_regex.each do |repo, regex|
         next if repo == base_repo
         if req['body'] =~ regex
-          addtl_pull_id = $1
+          addtl_pull_id = $2
           add_coreq(addtl_pull_id, repo, login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(req['updated_at']))
         end
       end
@@ -539,7 +539,7 @@ popd
         $repo_to_pull_regex.each do |repo, regex|
           next if repo == base_repo
           if comment['body'] =~ regex
-            addtl_pull_id = $1
+            addtl_pull_id = $2
             add_coreq(addtl_pull_id, repo,  comment['user']['login'], repo_to_pull_request, settings, trigger_updated_at, Time.parse(comment['updated_at']))
           end
         end
@@ -693,7 +693,7 @@ popd
       `sed -i "/#{merge_id}/d" ~/test_pull_request_not_mergable`
       delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments)
     end
-    
+
     def set_not_mergeable(id, repo, login)
       merge_id="#{repo}_#{id}_#{login}"
       count = 0
