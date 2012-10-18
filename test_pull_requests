@@ -715,6 +715,7 @@ popd
     #
     def process_pull_requests
       pull_requests = []
+      mergeability_in_flux = false
       $repo_to_pull_regex.keys.each do |repo|
         $stderr.puts "Processing repo '#{repo}'"
         list_pull_requests(repo).each do |req|
@@ -736,8 +737,7 @@ popd
               set_mergeable(id, repo, login, comments)
             else
               if set_not_mergeable(id, repo, login)
-                $stderr.puts "Waiting till next run to see if mergeability is in flux"
-                exit
+                mergeability_in_flux = true
               end
               next
             end
@@ -782,6 +782,11 @@ popd
             create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_UNSUPPORTED_BRANCH)
           end
         end
+      end
+      
+      if mergeability_in_flux
+        $stderr.puts "Waiting till next run to see if mergeability is in flux"
+        exit
       end
 
       sorted_pull_requests = pull_requests.sort_by do |req_info|
