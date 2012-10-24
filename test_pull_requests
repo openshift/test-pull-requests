@@ -298,6 +298,7 @@ pushd #{repo}
   git checkout #{pull_request['base']['ref']}
   git checkout -b #{pull_request['head']['ref']}_#{pull_request['user']['login']}
   git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']}
+  git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']} --tags
   git checkout #{pull_request['base']['ref']}
   git merge #{pull_request['head']['ref']}_#{pull_request['user']['login']}
 popd
@@ -847,10 +848,14 @@ popd
       next_build_num = get_next_build(branch, settings)
       build_uri = URI(Properties['jenkins_url'] + 'job/' + settings['branches'][branch]['jenkins_job_name'] + "/buildWithParameters?token=#{settings['branches'][branch]['build_token']}")
 
-      pull_id_params = ''
+      pull_id_params = "&BRANCH=#{branch}"
       repo_to_pull_request.each do |repo, pull_request|
         pull_id_param = settings['repo_to_pull_id_param'][repo]
         pull_id_params += "&#{pull_id_param}=#{pull_request['number']}"
+      end
+      
+      settings['addtl_jenkins_params'].each do |key, value|
+        pull_id_params += "&#{key}=#{value}"
       end
 
       # Now submit the Jenkins job
