@@ -849,13 +849,13 @@ popd
       build_uri = URI(Properties['jenkins_url'] + 'job/' + settings['branches'][branch]['jenkins_job_name'] + "/buildWithParameters?token=#{settings['branches'][branch]['build_token']}")
 
       pull_id_params = "&BRANCH=#{branch}"
-      repo_to_pull_request.each do |repo, pull_request|
+      repo_to_pull_request.each_with_index do |repo, pull_request, index|
         pull_id_param = settings['repo_to_pull_id_param'][repo]
         pull_id_params += "&#{pull_id_param}=#{pull_request['number']}"
-      end
-      
-      settings['addtl_jenkins_params'].each do |key, value|
-        pull_id_params += "&#{key}=#{value}"
+        
+        settings['addtl_jenkins_params'][settings['addtl_jenkins_params_group'][repo]].each do |key, value|
+          pull_id_params += "&#{key}=#{value}"
+        end if index == 0
       end
 
       # Now submit the Jenkins job
