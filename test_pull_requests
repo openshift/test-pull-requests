@@ -849,14 +849,18 @@ popd
       build_uri = URI(Properties['jenkins_url'] + 'job/' + settings['branches'][branch]['jenkins_job_name'] + "/buildWithParameters?token=#{settings['branches'][branch]['build_token']}")
 
       pull_id_params = "&BRANCH=#{branch}"
-      repo_to_pull_request.each_with_index do |repo, pull_request, index|
+      first_valid_repo = nil
+      repo_to_pull_request.each do |repo, pull_request|
         pull_id_param = settings['repo_to_pull_id_param'][repo]
-        pull_id_params += "&#{pull_id_param}=#{pull_request['number']}"
-        
-        settings['addtl_jenkins_params'][settings['addtl_jenkins_params_group'][repo]].each do |key, value|
-          pull_id_params += "&#{key}=#{value}"
-        end if index == 0
+        if pull_id_param
+          pull_id_params += "&#{pull_id_param}=#{pull_request['number']}"
+          first_valid_repo = repo unless first_valid_repo
+        end
       end
+
+      settings['addtl_jenkins_params'][settings['addtl_jenkins_params_group'][first_valid_repo]].each do |key, value|
+        pull_id_params += "&#{key}=#{value}"
+      end if first_valid_repo
 
       # Now submit the Jenkins job
       get_session(branch, settings).start do |http|
