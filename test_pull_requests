@@ -102,6 +102,17 @@ ACTION_UNSUPPORTED_BRANCH   = "#{ACTION_PREFIX} Only pull request(s) from #{$bra
 EVALUATED_MARKER = "Evaluated up to %s"
 EVALUATED_MARKER_REGEX = /^Evaluated up to (.*)/
 
+def branch_settings(branch, settings)
+  s = nil
+  if settings['branches'][branch]
+    s = settings['branches'][branch]
+  elsif settings['branches']['*']
+    s = settings['branches']['*']
+  end
+  s
+end
+
+
 # Dynamically extend GitHubAPI to add methods that don't
 # require a local git project
 module Hub
@@ -253,9 +264,11 @@ module Hub
       comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
       begin
         branch = pull_request['base']['ref']
-        branch_settings = settings['branches'][branch]
-        if branch_settings['image_base_name']
-          image = "#{branch_settings['image_base_name']}_#{JenkinsAPI.get_next_build(branch, settings, branch_settings['downstream_job_name'])}"
+        b_settings = branch_settings(branch, settings)
+        image_base_name = b_settings['image_base_name']
+        if image_base_name
+          image_base_name.gsub!('*', branch)
+          image = "#{image_base_name}_#{JenkinsAPI.get_next_build(branch, settings, b_settings['downstream_job_name'])}"
           comment += "\nImage: #{image}"
         end
       rescue Exception => e
@@ -572,7 +585,7 @@ popd
                 create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
               end
             else
-              updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
+              updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
             end
           when /^#{settings['test_prefix']} Waiting/
             $stderr.puts "Waiting..."
@@ -633,7 +646,7 @@ popd
               if JenkinsAPI.is_project_stable?(branch, settings)
                 submit_test_job = true
               else
-                updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
+                updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
               end
             end
 
@@ -657,7 +670,7 @@ popd
                   if JenkinsAPI.is_project_stable?(branch, settings)
                     submit_test_job = true
                   else
-                    updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{settings['branches'][branch]['downstream_job_name']}'"
+                    updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
                   end
                 end
               else
@@ -830,7 +843,7 @@ popd
   class JenkinsAPI
 
     def self.downstream_job_uri(branch, settings)
-      job_name = settings['branches'][branch]['downstream_job_name']
+      job_name = branch_settings(branch, settings)['downstream_job_name']
       URI("#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/api/json")
     end
 
@@ -846,7 +859,7 @@ popd
     def self.submit_jenkins_job(repo_to_pull_request, branch, settings)
       # First, get the next jenkins build number
       next_build_num = get_next_build(branch, settings)
-      build_uri = URI(Properties['jenkins_url'] + 'job/' + settings['branches'][branch]['jenkins_job_name'] + "/buildWithParameters?token=#{settings['branches'][branch]['build_token']}")
+      build_uri = URI(Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/buildWithParameters?token=#{branch_settings(branch, settings)['build_token']}")
 
       pull_id_params = "&BRANCH=#{branch}"
       first_valid_repo = nil
@@ -858,9 +871,12 @@ popd
         end
       end
 
-      settings['addtl_jenkins_params'][settings['addtl_jenkins_params_group'][first_valid_repo]].each do |key, value|
-        pull_id_params += "&#{key}=#{value}"
-      end if first_valid_repo
+      if first_valid_repo
+        addtl_jenkins_params = branch_settings(branch, settings)['addtl_jenkins_params']
+        addtl_jenkins_params[Properties['repo_groups'][first_valid_repo]].each do |key, value|
+          pull_id_params += "&#{key}=#{value}"
+        end if addtl_jenkins_params
+      end
 
       # Now submit the Jenkins job
       get_session(branch, settings).start do |http|
@@ -876,7 +892,7 @@ popd
           end
 
           # Now you can safely return with the submission registered
-          return Properties['jenkins_url'] + 'job/' + settings['branches'][branch]['jenkins_job_name'] + "/#{next_build_num}/"
+          return Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/#{next_build_num}/"
         else
           raise "Jenkins job submission failed for pull request"
         end
@@ -898,7 +914,7 @@ popd
     end
 
     def self.get_next_build(branch, settings, job_name=nil)
-      job_name = job_name ? job_name : settings['branches'][branch]['jenkins_job_name']
+      job_name = job_name ? job_name : branch_settings(branch, settings)['jenkins_job_name']
       job_api_uri = URI("#{Properties['jenkins_url']}job/#{job_name}/api/json")
       get_session(branch, settings).start do |http|
         request = Net::HTTP::Get.new job_api_uri.request_uri
@@ -917,7 +933,7 @@ popd
     
     def self.is_previous_build_running?(branch, settings)
       build_num = get_next_build(branch, settings) - 1
-      build_url = Properties['jenkins_url'] + 'job/' + settings['branches'][branch]['jenkins_job_name'] + "/#{build_num}/"
+      build_url = Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/#{build_num}/"
       get_session(branch, settings).start do |http|
         request = Net::HTTP::Get.new to_api_url(build_url).request_uri
         response = http.request request

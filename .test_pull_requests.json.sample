@@ -7,18 +7,26 @@
   "github_user": "myuserororg",
   "irc_channel": "#myircchannel",
   "bot_github_user": "mybotuser",
+  
+  "repo_groups": {
+    "myrepo1": "group1",
+    "myrepo2": "group1"
+  },
 
   "settings": {
     "test_settings": {
       "name": "test",
       "test_prefix": "Test Results:",
       "allow_multiple": true,
-      "branches": { "stage": {"jenkins_job_name": "test_pull_requests_stage",
+      "branches": { "*": {"jenkins_job_name": "test_pull_requests_stage",
                               "downstream_job_name": "build_image_stage",
                               "build_token": "mytoken"},
                     "master": {"jenkins_job_name": "test_pull_requests",
                                "downstream_job_name": "build_image",
-                               "build_token": "mytoken"} },
+                               "build_token": "mytoken"
+                               "addtl_jenkins_params": {"group1": {"param1": "value1",
+                                                                   "param2": "value2"} }
+                              } },
       "repo_to_teams": {
         "myrepo1": ["111111", "222222", "333333"],
         "myrepo2": ["111111", "444444"]
@@ -32,7 +40,7 @@
       "name": "merge",
       "test_prefix": "Merge Test Results:",
       "allow_multiple": false,
-      "branches": { "stage": {"jenkins_job_name": "merge_pull_requests_stage",
+      "branches": { "*": {"jenkins_job_name": "merge_pull_requests_stage",
                               "downstream_job_name": "build_image_stage",
                               "image_base_name": "devenv-stage",
                               "build_token": "mytoken"},
