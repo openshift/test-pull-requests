@@ -91,7 +91,7 @@ end
 
 $repo_to_pull_regex = {}
 $repos.each do |repo|
-  $repo_to_pull_regex[repo] = /https:\/\/github.com\/#{Properties['github_user']}\/#{repo}\/(pull|issue)\/(\d+)/
+  $repo_to_pull_regex[repo] = /https:\/\/github.com\/#{Properties['github_user']}\/#{repo}\/(pulls?|issues?)\/(\d+)/
 end
 
 ACTION_PREFIX               = "Action Required:"
