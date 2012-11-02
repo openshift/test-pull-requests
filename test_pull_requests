@@ -82,16 +82,23 @@ $branches = []
 $repos = []
 Properties['settings'].values.each do |settings|
   settings['branches'].keys.each do |branch|
-    $branches << branch
+    $branches |= [branch]
   end
   settings['repo_to_teams'].keys.each do |repo|
-    $repos << repo
+    $repos |= [repo]
   end
 end
 
 $repo_to_pull_regex = {}
 $repos.each do |repo|
   $repo_to_pull_regex[repo] = /https:\/\/github.com\/#{Properties['github_user']}\/#{repo}\/(pulls?|issues?)\/(\d+)/
+end
+
+$permissions = {}
+$commits = {}
+$submitted_tests = {}
+$branches.each do |branch|
+  $submitted_tests[branch] = {}  
 end
 
 ACTION_PREFIX               = "Action Required:"
@@ -110,6 +117,10 @@ def branch_settings(branch, settings)
     s = settings['branches']['*']
   end
   s
+end
+
+def submitted_tests_for_branch(branch)
+  $submitted_tests[branch] ? $submitted_tests[branch] : $submitted_tests['*']
 end
 
 
@@ -229,9 +240,10 @@ module Hub
 
     # Submit tests to Jenkins and update the comment
     def submit_tests(repo_to_pull_request, base_repo, branch, comment_id, settings)
+      submitted_tests = submitted_tests_for_branch(branch)
       unless settings['allow_multiple']
-        if $submitted_tests[branch][settings['name']] || JenkinsAPI.is_previous_build_running?(branch, settings)
-          $submitted_tests[branch][settings['name']] = true
+        if submitted_tests[settings['name']] || JenkinsAPI.is_previous_build_running?(branch, settings)
+          submitted_tests[settings['name']] = true
           $stderr.puts "Waiting for existing build to finish"
           return
         end
@@ -253,7 +265,7 @@ module Hub
         end
       end
 
-      $submitted_tests[branch][settings['name']] = true unless settings['allow_multiple']
+      submitted_tests[settings['name']] = true unless settings['allow_multiple']
     end
     
     def merge_pull_request(pull_id, repo, settings)
@@ -591,7 +603,8 @@ popd
             $stderr.puts "Waiting..."
             # Only submit the tests if the project is stable
             if JenkinsAPI.is_project_stable?(branch, settings)
-              if !($submitted_tests[branch][settings['name']] && comment =~ /^#{settings['test_prefix']} Waiting: You are in the build queue at position: \d+/)
+              submitted_tests = submitted_tests_for_branch(branch)
+              if !(submitted_tests[settings['name']] && comment =~ /^#{settings['test_prefix']} Waiting: You are in the build queue at position: \d+/)
                 $stderr.puts "Checking that evaluated times are still up to date"
                 if changed_after_eval
                   resubmit_test_job = true
@@ -626,7 +639,8 @@ popd
 
             # If the build is finished, update with the results
             if JenkinsAPI.is_build_running?(build_url, branch, settings)
-              $submitted_tests[branch][settings['name']] = true unless settings['allow_multiple'] 
+              submitted_tests = submitted_tests_for_branch(branch)
+              submitted_tests[settings['name']] = true unless settings['allow_multiple'] 
             else
               result = JenkinsAPI.get_build_result(build_url, branch, settings)
               updated_comment = "#{settings['test_prefix']} #{result} (#{build_url})"
@@ -738,7 +752,7 @@ popd
         
           branch = req['base']['ref']
           
-          if $branches.include?(branch)
+          if $branches.include?(branch) || $branches.include?('*') 
 
             login = req['user']['login']
 
@@ -822,15 +836,17 @@ popd
         
         branch = req['base']['ref']
 
-        if !settings['allow_multiple'] && $submitted_tests[branch][settings['name']]
+        submitted_tests = submitted_tests_for_branch(branch)
+        if !settings['allow_multiple'] && submitted_tests[settings['name']]
           comments = get_comments(req['number'], req['base']['repo']['name'])
           bot_comment = get_comment_with_prefix(req['number'], req['base']['repo']['name'], settings['test_prefix'], comments)
           if bot_comment && (bot_comment['body'] =~ /^#{settings['test_prefix']} Waiting/)
-            skipped_count[branch][settings['name']] = 0 if skipped_count[branch][settings['name']].nil?
-            skipped_count[branch][settings['name']] += 1
-            queued_comment = "#{settings['test_prefix']} Waiting: You are in the build queue at position: #{skipped_count[branch][settings['name']].to_s}"
+            skipped_count_branch = skipped_count[branch] ? skipped_count[branch] : skipped_count['*']  
+            skipped_count_branch[settings['name']] = 0 if skipped_count_branch[settings['name']].nil?
+            skipped_count_branch[settings['name']] += 1
+            queued_comment = "#{settings['test_prefix']} Waiting: You are in the build queue at position: #{skipped_count_branch[settings['name']].to_s}"
             create_or_update_comment(req['number'], req['base']['repo']['name'], settings['test_prefix'], queued_comment , comments)
-            $stderr.puts "Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count[branch][settings['name']]}"
+            $stderr.puts "Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count_branch[settings['name']]}"
           end
         end
       end
@@ -986,13 +1002,6 @@ end
   file_store = GitHubAPI::FileStore.new File.expand_path(config_file)
   file_config = GitHubAPI::Configuration.new file_store
   GitHubAPI.new file_config, :app_url => Properties['jenkins_host']
-end
-
-$permissions = {}
-$commits = {}
-$submitted_tests = {}
-$branches.each do |branch|
-  $submitted_tests[branch] = {}  
 end
 
 if merge_pull_id
