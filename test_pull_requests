@@ -31,9 +31,9 @@ Options:
 -h|--help
     Show Usage info
 --merge_pull_request <pull_id>
-    Takes the id of the pull request to merge and merges into master
+    Takes the id of the pull request to merge and merges into the branch specified by the pull request
 --local_merge_pull_request <pull_id>
-    Takes the id of the pull request to merge and locally merges into master
+    Takes the id of the pull request to merge and locally merges into the branch specified by the pull request
 --test_merge_pull_request <pull_id>
     Takes the id of the pull request to merge and makes sure the merge will succeed before actually merging
 --repo <repo>
@@ -890,6 +890,7 @@ popd
       if first_valid_repo
         addtl_jenkins_params = branch_settings(branch, settings)['addtl_jenkins_params']
         addtl_jenkins_params[Properties['repo_groups'][first_valid_repo]].each do |key, value|
+          value.gsub!('*', branch)
           pull_id_params += "&#{key}=#{value}"
         end if addtl_jenkins_params
       end
