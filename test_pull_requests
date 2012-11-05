@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
 # Client script for submitting pull requests for testing
 # as well as updating the test results from Jenkins.
