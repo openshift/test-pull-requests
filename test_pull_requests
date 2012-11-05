@@ -22,7 +22,7 @@ require 'time'
 
 def usage
   puts <<USAGE
-Usage: test_pull_requests [--help] [--merge_pull_request <pull_id>] [--local_merge_pull_request <pull_id>] [--test_pull_request <pull_id>] [--repo <repo>]
+Usage: test_pull_requests [--help] [--merge_pull_request <pull_id>] [--local_merge_pull_request <pull_id>] [--test_merge_pull_request <pull_id>] [--repo <repo>]
 
 This will process all the setting specified pull requests and submit
 Jenkins tests for any mergeable pull requests
@@ -139,7 +139,7 @@ module Hub
       res.error! unless res.success?
       res.data
     end
-    
+
     def get_pull_request(id, repo)
       res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s" % id
       res.error! unless res.success?
@@ -248,7 +248,7 @@ module Hub
           return
         end
       end
-      
+
       # If the project is stable, submit the tests
       build_url = JenkinsAPI.submit_jenkins_job(repo_to_pull_request, branch, settings)
 
@@ -267,7 +267,7 @@ module Hub
 
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
     end
-    
+
     def merge_pull_request(pull_id, repo, settings)
       $stderr.puts "Merging pull request ##{pull_id} for repo '#{repo}'"
       pull_request, bot_comment = test_merge_pull_request(pull_id, repo, settings)
@@ -292,7 +292,7 @@ module Hub
       res = put "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/#{pull_id}/merge", params
       res.error! unless res.success?
     end
-    
+
     def test_merge_pull_request(pull_id, repo, settings)
       $stderr.puts "Test merging pull request ##{pull_id} for repo '#{repo}'"
       comments = get_comments(pull_id, repo)
@@ -313,7 +313,7 @@ module Hub
       end
       return pull_request, bot_comment
     end
-    
+
     def local_merge_pull_request(pull_id, repo)
       $stderr.puts "Local merging pull request ##{pull_id} for repo '#{repo}'"
       pull_request = get_pull_request(pull_id, repo)
@@ -344,7 +344,7 @@ popd
         req['Content-Length'] = req.body ? req.body.length : 0
       end
     end
-    
+
     def delete url
       perform_request url, :Delete do |req|
         yield req if block_given?
@@ -367,7 +367,7 @@ popd
 
       yield bot_comment['id'], bot_comment['body'], Time.parse(bot_comment['updated_at'])
     end
-    
+
     #
     # Creates or updates a comment with given prefix
     #
@@ -382,7 +382,7 @@ popd
       end
 
     end
-    
+
     #
     # Creates or updates a comment with given prefix
     #
@@ -393,7 +393,7 @@ popd
       end
       delete_comment(comment['id'], repo) if comment
     end
-    
+
     #
     # Gets a comment with given prefix
     #
@@ -412,7 +412,7 @@ popd
 
       prefix_comment
     end
-    
+
     def get_evaluated_time(comments)
       comments = sort_comments(comments)
 
@@ -423,12 +423,12 @@ popd
       end
       return nil
     end
-    
+
     def get_trusted_trigger_time(pull_request, comments, settings)
       login = pull_request['user']['login']
-      updated_at, changed_after_eval = get_updated_at(pull_request, comments)
+      updated_at = get_updated_at(pull_request, comments)
       repo = pull_request['base']['repo']['name']
-        
+
       trigger_regex = /\[#{settings['name']}\]/i
       trigger_time = nil
       if pull_request['title'] =~ trigger_regex || pull_request['body'] =~ trigger_regex
@@ -454,7 +454,7 @@ popd
       end
       return trigger_time
     end
-    
+
     def sort_comments(comments)
       comments = comments.sort_by do |comment|
         Time.parse(comment['updated_at'])
@@ -473,7 +473,7 @@ popd
           create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], being_queued_comment, pull_request_comments)
         end
         pull_request_evaluated_time = get_evaluated_time(pull_request_comments)
-        pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments)
+        pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments)
         if pull_request_changed_after_eval || pull_request_evaluated_time < trigger_updated_at
           commits = get_commits(pull_request['number'], repo)
           # Add a new evaluated marker
@@ -487,7 +487,7 @@ popd
         end
       end
     end
-    
+
     def get_updated_at(pull_request, comments)
       updated_at = nil
       comments = sort_comments(comments)
@@ -506,7 +506,7 @@ popd
       updated_at = Time.parse(commits.last['commit']['committer']['date'])
       [updated_at, changed_after_eval]
     end
-    
+
     def add_coreq(addtl_pull_id, repo, login, repo_to_pull_request, settings, trigger_updated_at, updated_at)
       trusted = user_trusted?(login, repo, settings)
       # It's ok if the user is trusted or the trigger was added after the comment
@@ -541,7 +541,7 @@ popd
       base_repo = req['base']['repo']['name']
       login = req['user']['login']
       repo_to_pull_request = {base_repo => req}
-      
+
       $stderr.puts "\n****Processing #{settings['name']} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
 
       trigger_updated_at = get_trusted_trigger_time(req, comments, settings)
@@ -712,9 +712,8 @@ popd
           end
         end
       end
-      
     end
-    
+
     def set_mergeable(id, repo, login, comments=nil)
       merge_id="#{repo}_#{id}_#{login}"
       comments = get_comments(id, repo) if comments.nil?
@@ -749,9 +748,9 @@ popd
         list_pull_requests(repo).each do |req|
           id = req['number']
           $stderr.puts "Analyzing pull request ##{id}"
-        
+
           branch = req['base']['ref']
-          
+
           if $branches.include?(branch) || $branches.include?('*') 
 
             login = req['user']['login']
@@ -811,7 +810,7 @@ popd
           end
         end
       end
-      
+
       if mergeability_in_flux
         $stderr.puts "Waiting till next run to see if mergeability is in flux"
         exit
@@ -833,7 +832,7 @@ popd
         comments = req_info[3]
         settings = req_info[4]
         process_pull_request(req, updated_at, changed_after_eval, comments, settings)
-        
+
         branch = req['base']['ref']
 
         submitted_tests = submitted_tests_for_branch(branch)
@@ -947,7 +946,7 @@ popd
     def self.to_api_url build_url
       URI(build_url + "/api/json")
     end
-    
+
     def self.is_previous_build_running?(branch, settings)
       build_num = get_next_build(branch, settings) - 1
       build_url = Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/#{build_num}/"
