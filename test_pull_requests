@@ -39,6 +39,7 @@ Options:
 --repo <repo>
     The repo of the pull request
 USAGE
+  exit 255
 end
 
 opts = GetoptLong.new(
@@ -51,15 +52,13 @@ opts = GetoptLong.new(
 
 args = {}
 begin
-    opts.each{ |k,v| args[k[2..-1].intern]=v }
+  opts.each{ |k,v| args[k[2..-1].intern]=v }
 rescue GetoptLong::Error => e
-    usage
-    exit -100
+  usage
 end
 
 if args[:help]
   usage
-  exit 1
 end
 
 merge_pull_id = args[:merge_pull_request]
