@@ -329,7 +329,7 @@ pushd #{repo}
 popd
 }
       output = `#{merge_command}`
-      exit_code = $?
+      exit_code = $?.exitstatus
       puts output
       exit 1 if exit_code != 0
     end
