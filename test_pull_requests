@@ -506,10 +506,10 @@ popd
       [updated_at, changed_after_eval]
     end
     
-    def add_coreq(addtl_pull_id, repo, login, repo_to_pull_request, settings, trigger_updated_at, updated_at)
+    def add_coreq(addtl_pull_id, repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at)
       trusted = user_trusted?(login, repo, settings)
       # It's ok if the user is trusted or the trigger was added after the comment
-      if trusted || (trigger_updated_at && trigger_updated_at >= updated_at)
+      if trusted || (user_trusted?(trigger_login, repo, settings) && (trigger_updated_at && trigger_updated_at >= updated_at))
         pull_request = get_pull_request(addtl_pull_id, repo)
         if pull_request
           if pull_request['mergeable']
@@ -518,7 +518,6 @@ popd
           else
             set_not_mergeable(addtl_pull_id, repo, pull_request['user']['login'])
             $stderr.puts "Pull ##{addtl_pull_id} in repo '#{repo}' is not mergeable!"
-            return
           end
         else
           $stderr.puts "Pull ##{addtl_pull_id} not found in repo '#{repo}'"
@@ -556,7 +555,7 @@ popd
         next if repo == base_repo
         if req['body'] =~ regex
           addtl_pull_id = $2
-          add_coreq(addtl_pull_id, repo, login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(req['updated_at']))
+          add_coreq(addtl_pull_id, repo, login, login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(req['updated_at']))
         end
       end
 
@@ -565,7 +564,7 @@ popd
           next if repo == base_repo
           if comment['body'] =~ regex
             addtl_pull_id = $2
-            add_coreq(addtl_pull_id, repo,  comment['user']['login'], repo_to_pull_request, settings, trigger_updated_at, Time.parse(comment['updated_at']))
+            add_coreq(addtl_pull_id, repo,  comment['user']['login'], login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(comment['updated_at']))
           end
         end
       end
