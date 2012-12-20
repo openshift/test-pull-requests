@@ -507,6 +507,7 @@ popd
     end
     
     def add_coreq(addtl_pull_id, repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at)
+      $stderr.puts "Processing dependency on pull request #{addtl_pull_id} in repo '#{repo}'"
       trusted = user_trusted?(login, repo, settings)
       # It's ok if the user is trusted or the trigger was added after the comment
       if trusted || (user_trusted?(trigger_login, repo, settings) && (trigger_updated_at && trigger_updated_at >= updated_at))
