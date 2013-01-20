@@ -502,7 +502,7 @@ popd
       if commits.last['sha'] == previous_sha
         changed_after_eval = false
       end
-      updated_at = Time.parse(commits.last['committer']['date'])
+      updated_at = Time.parse(commits.last['commit']['committer']['date'])
       [updated_at, changed_after_eval]
     end
     
