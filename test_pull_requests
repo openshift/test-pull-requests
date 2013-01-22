@@ -502,7 +502,15 @@ popd
       if commits.last['sha'] == previous_sha
         changed_after_eval = false
       end
-      updated_at = Time.parse(commits.last['commit']['committer']['date'])
+      #GitHub API isn't consistent here
+      updated_at_str = nil
+      if commits.last.has_key?('commit')
+        updated_at_str = commits.last['commit']['committer']['date']
+      else
+        updated_at_str = commits.last['committer']['date']
+      end
+      
+      updated_at = Time.parse(updated_at_str)
       [updated_at, changed_after_eval]
     end
     
