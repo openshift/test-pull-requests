@@ -280,7 +280,7 @@ module Hub
         if image_base_name
           image_base_name.gsub!('*', branch)
           image = "#{image_base_name}_#{JenkinsAPI.get_next_build(branch, settings, b_settings['downstream_job_name'])}"
-          comment += "\nImage: #{image}"
+          comment = "#{comment} (Image: #{image})"
         end
       rescue Exception => e
         $stderr.puts e.message
