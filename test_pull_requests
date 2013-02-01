@@ -217,12 +217,14 @@ module Hub
       res.data
     end
 
-    # Verifies the user is part of Team Red Hat
+    # Verifies the user is part of a valid team
     def user_trusted?(login, repo, settings)
       trusted = false
       repo_setting_key = "#{repo}_#{settings['name']}"
       if $permissions[login]
-        trusted = $permissions[login][repo_setting_key] ? true : false
+        if $permissions[login][repo_setting_key]
+          trusted = $permissions[login][repo_setting_key] ? true : false
+        end
       else
         $permissions[login] = {}
       end
