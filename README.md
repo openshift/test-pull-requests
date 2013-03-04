@@ -14,7 +14,7 @@ Utility for serially testing then merging pull requests in conjunction with Jenk
 
 ### Permissions
  * [merge] and [test] flags are only listened to for trusted users (in comments or titles) and are only supported for the configured branches.
- * Retries will automatically occur if a pull request is updated after a failure as long as the owner of the pull request is trusted.  So for example, if you tag a pull request with [merge] for a non trusted user, then they add code to the commit. It will fail on merge because they updated after the tests were started and will not retry until another [merge] tag is added/updated by a trusted user.  Trusted users are determined per test group and you can have multiple GitHub teams assigned to the same repo.
+ * Retries will automatically occur if a pull request is updated after a failure as long as the owner of the pull request is trusted.  So for example, if you tag a pull request with [merge] for a non trusted user, then they add code to the commit. It will fail on merge because they updated after the tests were started and will not retry until another [merge] tag is added/updated by a trusted user.  Trusted users are determined per test group and you can have multiple GitHub teams and/or organizations assigned to the same repo.
 
 
 ## Setup

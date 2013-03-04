@@ -83,9 +83,8 @@ Properties['settings'].values.each do |settings|
   settings['branches'].keys.each do |branch|
     $branches |= [branch]
   end
-  settings['repo_to_teams'].keys.each do |repo|
-    $repos |= [repo]
-  end
+  settings['repo_to_teams'].keys.each { |repo| $repos |= [repo] } if settings['repo_to_teams']
+  settings['repo_to_orgs'].keys.each { |repo| $repos |= [repo] } if settings['repo_to_orgs']
 end
 
 $repo_to_pull_regex = {}
@@ -229,8 +228,11 @@ module Hub
         $permissions[login] = {}
       end
       if $permissions[login][repo_setting_key].nil?
-        settings['repo_to_teams'][repo].each do |team|
-          res = get "https://api.github.com/teams/#{team}/members/#{login}"
+        paths = []
+        paths += settings['repo_to_teams'][repo].map { |t| "teams/#{t}" } if settings['repo_to_teams']
+        paths += settings['repo_to_orgs'][repo].map { |o| "orgs/#{o}" } if settings['repo_to_orgs']
+        paths.each do |path|
+          res = get "https://api.github.com/#{path}/members/#{login}"
           trusted = res.success?
           break if trusted
         end
