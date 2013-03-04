@@ -876,7 +876,7 @@ popd
       proxy = Net::HTTP::Proxy(Properties['proxy_host'], Properties['proxy_port'])
       uri = downstream_job_uri(branch, settings)
       session = proxy.new(uri.host, uri.port)
-      session.use_ssl = true
+      session.use_ssl = true if uri.scheme == "https"
       session.verify_mode = OpenSSL::SSL::VERIFY_NONE
       return session
     end
