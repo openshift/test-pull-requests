@@ -18,6 +18,7 @@
       "name": "test",
       "test_prefix": "Test Results:",
       "allow_multiple": true,
+      "run_without_trigger": false,
       "branches": { "*": {"jenkins_job_name": "test_pull_requests_stage",
                               "downstream_job_name": "build_image_stage",
                               "build_token": "mytoken"},
