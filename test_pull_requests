@@ -22,7 +22,7 @@ require 'time'
 
 def usage
   puts <<USAGE
-Usage: test_pull_requests [--help] [--merge_pull_request <pull_id>] [--local_merge_pull_request <pull_id>] [--test_pull_request <pull_id>] [--repo <repo>]
+Usage: test_pull_requests [--help] [--merge_pull_request <pull_id>] [--local_merge_pull_request <pull_id>] [--test_pull_request <pull_id>] [--repo <repo>] [--properties <path>]
 
 This will process all the setting specified pull requests and submit
 Jenkins tests for any mergeable pull requests
@@ -38,6 +38,8 @@ Options:
     Takes the id of the pull request to merge and makes sure the merge will succeed before actually merging
 --repo <repo>
     The repo of the pull request
+-p|--properties <path>
+    Path to the properties/configuration file (default: ~/.test_pull_requests.json)
 USAGE
   exit 255
 end
@@ -47,7 +49,8 @@ opts = GetoptLong.new(
   ["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
   ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
   ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
-  ["--repo",                     GetoptLong::REQUIRED_ARGUMENT]
+  ["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
+  ["--properties",         "-p", GetoptLong::REQUIRED_ARGUMENT]
 )
 
 args = {}
@@ -68,7 +71,7 @@ pull_id_repo = args[:repo]
 
 include Hub
 
-PROPERTIES_LOCATION = File.expand_path("~/.test_pull_requests.json")
+PROPERTIES_LOCATION = args[:properties] || File.expand_path("~/.test_pull_requests.json")
 Properties = if File.exists? PROPERTIES_LOCATION
   JSON.parse(IO.read(PROPERTIES_LOCATION))
 else
@@ -99,6 +102,7 @@ $submitted_tests = {}
 $branches.each do |branch|
   $submitted_tests[branch] = {}  
 end
+$not_mergable_cache = Properties['not_mergable_cache'] || '~/test_pull_request_not_mergable'
 
 ACTION_PREFIX               = Properties['action_required_prefix']
 ACTION_NOT_MERGE            = "#{ACTION_PREFIX} Pull request cannot be automatically merged"
@@ -727,21 +731,21 @@ popd
     def set_mergeable(id, repo, login, comments=nil)
       merge_id="#{repo}_#{id}_#{login}"
       comments = get_comments(id, repo) if comments.nil?
-      `sed -i "/#{merge_id}/d" ~/test_pull_request_not_mergable`
+      `sed -i "/#{merge_id}/d" #{$not_mergable_cache}`
       delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments)
     end
 
     def set_not_mergeable(id, repo, login)
       merge_id="#{repo}_#{id}_#{login}"
       count = 0
-      previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergable`.chomp
+      previous_merge_result=`grep #{merge_id} #{$not_mergable_cache}`.chomp
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
       if count > 10
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
       else
-        `sed -i "/#{merge_id}/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergable`
+        `sed -i "/#{merge_id}/d" #{$not_mergable_cache} && echo "#{merge_id}=#{(count+1).to_s}" >> #{$not_mergable_cache}`
       end
       count == 0 #return if this was the first time (used as stability measure, Github becomes unstable for mergeability right after a merge happens)
     end
