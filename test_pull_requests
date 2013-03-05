@@ -738,7 +738,7 @@ popd
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count > 10
+      if count > 40 # ~2 hours
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
       else
         `sed -i "/#{merge_id}/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergable`

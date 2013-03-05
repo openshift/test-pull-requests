@@ -7,12 +7,12 @@
   "github_user": "myuserororg",
   "irc_channel": "#myircchannel",
   "bot_github_user": "mybotuser",
+  "action_required_prefix": "Action Required:",
   
   "repo_groups": {
     "myrepo1": "group1",
     "myrepo2": "group1"
   },
-
   "settings": {
     "test_settings": {
       "name": "test",
