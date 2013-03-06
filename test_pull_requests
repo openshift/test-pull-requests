@@ -551,7 +551,7 @@ popd
       login = req['user']['login']
       repo_to_pull_request = {base_repo => req}
       
-      $stderr.puts "\n****Processing #{settings['name']} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
+      $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
 
       trigger_updated_at = get_trusted_trigger_time(req, comments, settings)
       evaluated_time = get_evaluated_time(comments)
