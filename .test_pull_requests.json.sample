@@ -39,6 +39,9 @@
     "merge_test_settings": {
       "name": "merge",
       "test_prefix": "Merge Test Results:",
+      "pretest_queue_threshold": 2,
+      "pretest_settings_key": "test_settings",
+      "pretest_comment": "[Test]ing while waiting on the merge queue",
       "allow_multiple": false,
       "branches": { "*": {"jenkins_job_name": "merge_pull_requests_stage",
                               "downstream_job_name": "build_image_stage",

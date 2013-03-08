@@ -97,7 +97,7 @@ $permissions = {}
 $commits = {}
 $submitted_tests = {}
 $branches.each do |branch|
-  $submitted_tests[branch] = {}  
+  $submitted_tests[branch] = {}
 end
 
 ACTION_PREFIX               = Properties['action_required_prefix']
@@ -846,8 +846,13 @@ popd
         branch = req['base']['ref']
 
         submitted_tests = submitted_tests_for_branch(branch)
+        
+
+        
+        
         if !settings['allow_multiple'] && submitted_tests[settings['name']]
           comments = get_comments(req['number'], req['base']['repo']['name'])
+            
           bot_comment = get_comment_with_prefix(req['number'], req['base']['repo']['name'], settings['test_prefix'], comments)
           if bot_comment && (bot_comment['body'] =~ /^#{settings['test_prefix']} Waiting/)
             skipped_count_branch = skipped_count[branch] ? skipped_count[branch] : skipped_count['*']  
@@ -856,6 +861,11 @@ popd
             queued_comment = "#{settings['test_prefix']} Waiting: You are in the build queue at position: #{skipped_count_branch[settings['name']].to_s}"
             create_or_update_comment(req['number'], req['base']['repo']['name'], settings['test_prefix'], queued_comment , comments)
             $stderr.puts "Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count_branch[settings['name']]}"
+            # Get ahead of the game and pretest requests
+            if settings['pretest_settings_key'] && settings['pretest_comment'] && settings['pretest_queue_threshold'] && (skipped_count_branch[settings['name']] >= settings['pretest_queue_threshold'])
+              trusted_trigger_time = get_trusted_trigger_time(req, comments, Properties['settings'][settings['pretest_settings_key']])
+              create_or_update_comment(req['number'], req['base']['repo']['name'], settings['pretest_comment'].gsub('[', '\[').gsub(']', '\]'), settings['pretest_comment'], comments) unless trusted_trigger_time
+            end
           end
         end
       end
