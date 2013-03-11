@@ -105,8 +105,8 @@ ACTION_NOT_MERGE            = "#{ACTION_PREFIX} Pull request cannot be automatic
 ACTION_NOT_TEAM             = "#{ACTION_PREFIX} Please contact #{Properties['irc_channel']} to have this pull request manually reviewed and tested"
 ACTION_UNSUPPORTED_BRANCH   = "#{ACTION_PREFIX} Only pull request(s) from #{$branches.pretty_inspect.chomp} are handled by the #{Properties['bot_github_user']}"
 
-EVALUATED_MARKER = "Evaluated up to %s"
-EVALUATED_MARKER_REGEX = /^Evaluated up to (.*)/
+EVALUATED_MARKER = "Evaluated for #{Properties['product'].downcase} up to %s"
+EVALUATED_MARKER_REGEX = /^Evaluated for #{Properties['product'].downcase} up to (.*)/
 
 def branch_settings(branch, settings)
   s = nil

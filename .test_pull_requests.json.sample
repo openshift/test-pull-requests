@@ -7,6 +7,7 @@
   "github_user": "myuserororg",
   "irc_channel": "#myircchannel",
   "bot_github_user": "mybotuser",
+  "product": "MyProduct",
   "action_required_prefix": "Action Required:",
   
   "repo_groups": {
