@@ -290,7 +290,18 @@ module Hub
 
       update_comment(bot_comment['id'], repo, comment)
       params = { :commit_message => "Merged by #{Properties['bot_github_user']}" }
-      res = put "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/#{pull_id}/merge", params
+      sleep_time = 1
+      res = nil
+      num_tries = 5
+      (1..num_tries).each do |i|
+        res = put "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/#{pull_id}/merge", params
+        break if res.success?
+        if i < num_tries
+          sleep sleep_time
+          sleep_time *= 2
+          $stderr.puts "Retrying...  attempt: #{i+1}"
+        end
+      end
       res.error! unless res.success?
     end
     
@@ -298,7 +309,7 @@ module Hub
       $stderr.puts "Test merging pull request ##{pull_id} for repo '#{repo}'"
       comments = get_comments(pull_id, repo)
       bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'], comments)
-      raise "Missing '{settings['test_prefix']}' comment!" if bot_comment.nil?
+      raise "Missing '#{settings['test_prefix']}' comment!" if bot_comment.nil?
       evaluated_time = get_evaluated_time(comments)
       raise "Missing evaluated flag!" if evaluated_time.nil?
       pull_request = get_pull_request(pull_id, repo)
