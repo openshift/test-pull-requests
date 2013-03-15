@@ -901,7 +901,7 @@ popd
             $stderr.puts "Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count_branch[settings['name']]}"
             # Get ahead of the game and pretest requests
             if settings['pretest_settings_key'] && settings['pretest_comment'] && settings['pretest_queue_threshold'] && (skipped_count_branch[settings['name']] >= settings['pretest_queue_threshold'])
-              trusted_trigger_time = get_trusted_trigger_time(req, comments, Properties['settings'][settings['pretest_settings_key']])
+              trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, Properties['settings'][settings['pretest_settings_key']])
               create_or_update_comment(req['number'], req['base']['repo']['name'], settings['pretest_comment'].gsub('[', '\[').gsub(']', '\]'), settings['pretest_comment'], comments) unless trusted_trigger_time
             end
           end
