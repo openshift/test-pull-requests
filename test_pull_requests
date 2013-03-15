@@ -425,6 +425,22 @@ popd
       prefix_comment
     end
     
+    def get_comment_with_value(issue_id, repo, value, comments=nil)
+      comment = nil
+    
+      comments = comments ? comments : get_comments(issue_id, repo)
+    
+      # See if we can find an existing bot comment
+      comments.each do |c|
+        if c['body'] == value && (c['user']['login'] == Properties['bot_github_user'])
+          comment = c
+          break
+        end
+      end
+    
+      comment
+    end
+    
     def get_evaluated_time(comments)
       comments = sort_comments(comments)
 
@@ -443,10 +459,12 @@ popd
         
       trigger_regex = /\[#{settings['name']}\]/i
       trigger_time = nil
+      trigger_login = nil
       if pull_request['title'] =~ trigger_regex || pull_request['body'] =~ trigger_regex
         if user_trusted?(login, repo, settings)
           evaluated_time = get_evaluated_time(comments)
           trigger_time = evaluated_time || Time.parse(pull_request['updated_at'])
+          trigger_login = login
         end
       end
 
@@ -458,13 +476,16 @@ popd
           if user_trusted?(comment_login, repo, settings)
             trigger_comment_updated_at = Time.parse(comment['updated_at'])
             if user_trusted?(login, repo, settings) || trigger_comment_updated_at > updated_at
-              trigger_time = trigger_comment_updated_at if !trigger_time || trigger_comment_updated_at > trigger_time 
+              if !trigger_time || trigger_comment_updated_at > trigger_time
+                trigger_time = trigger_comment_updated_at
+                trigger_login = comment_login
+              end 
               break
             end
           end
         end
       end
-      return trigger_time
+      return [trigger_time, trigger_login]
     end
     
     def sort_comments(comments)
@@ -527,25 +548,31 @@ popd
       [updated_at, changed_after_eval]
     end
     
-    def add_coreq(addtl_pull_id, repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at)
-      $stderr.puts "Processing dependency on pull request #{addtl_pull_id} in repo '#{repo}'"
-      trusted = user_trusted?(login, repo, settings)
+    def add_coreq(addtl_pull_id, addtl_pull_repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at, base_pull_id, base_repo, comments)
+      $stderr.puts "Processing dependency on pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}'"
+      trusted = user_trusted?(login, addtl_pull_repo, settings)
       # It's ok if the user is trusted or the trigger was added after the comment
-      if trusted || (user_trusted?(trigger_login, repo, settings) && (trigger_updated_at && trigger_updated_at >= updated_at))
-        pull_request = get_pull_request(addtl_pull_id, repo)
+      if trusted || (user_trusted?(trigger_login, addtl_pull_repo, settings) && (trigger_updated_at && trigger_updated_at >= updated_at))
+        pull_request = get_pull_request(addtl_pull_id, addtl_pull_repo)
         if pull_request
           if pull_request['mergeable']
-            repo_to_pull_request[repo] = pull_request
-            set_mergeable(addtl_pull_id, repo, pull_request['user']['login'])
+            repo_to_pull_request[addtl_pull_repo] = pull_request
+            set_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login'])
           else
-            set_not_mergeable(addtl_pull_id, repo, pull_request['user']['login'])
-            $stderr.puts "Pull ##{addtl_pull_id} in repo '#{repo}' is not mergeable!"
+            set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login'])
+            comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' is not mergeable"
+            $stderr.puts comment
+            add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
           end
         else
-          $stderr.puts "Pull ##{addtl_pull_id} not found in repo '#{repo}'"
+          comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' not found"
+          $stderr.puts comment
+          add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
         end
       else
-        $stderr.puts "User '#{login}' not trusted"
+        comment = "User '#{login}' is not permitted to #{settings['name']} linked pull request #{addtl_pull_id} in '#{addtl_pull_repo}'.  If the #{settings['name']} was requested by another user with permission to #{settings['name']} in '#{addtl_pull_repo}', the linked pull request must be in a comment before the #{settings['name']} comment (not including the pull request description) or be added by a user with permission to #{settings['name']} in '#{addtl_pull_repo}'."
+        $stderr.puts comment
+        add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
       end
     end
 
@@ -564,7 +591,7 @@ popd
       
       $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
 
-      trigger_updated_at = get_trusted_trigger_time(req, comments, settings)
+      trigger_updated_at, trigger_login = get_trusted_trigger_time(req, comments, settings)
       evaluated_time = get_evaluated_time(comments)
 
       $stderr.puts "Updated at: #{updated_at}"
@@ -577,7 +604,7 @@ popd
         next if repo == base_repo
         if req['body'] =~ regex
           addtl_pull_id = $2
-          add_coreq(addtl_pull_id, repo, login, login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(req['updated_at']))
+          add_coreq(addtl_pull_id, repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(req['updated_at']), id, base_repo, comments)
         end
       end
 
@@ -586,7 +613,7 @@ popd
           next if repo == base_repo
           if comment['body'] =~ regex
             addtl_pull_id = $2
-            add_coreq(addtl_pull_id, repo,  comment['user']['login'], login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(comment['updated_at']))
+            add_coreq(addtl_pull_id, repo, comment['user']['login'], trigger_login, repo_to_pull_request, settings, trigger_updated_at, Time.parse(comment['updated_at']), id, base_repo, comments)
           end
         end
       end
