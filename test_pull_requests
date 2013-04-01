@@ -333,11 +333,11 @@ module Hub
 set -ex
 pushd #{repo}
   git checkout #{pull_request['base']['ref']}
-  git checkout -b #{pull_request['head']['ref']}_#{pull_request['user']['login']}
+  git checkout -b tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
   git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']}
   git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']} --tags
   git checkout #{pull_request['base']['ref']}
-  git merge #{pull_request['head']['ref']}_#{pull_request['user']['login']}
+  git merge tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
 popd
 }
       output = `#{merge_command}`
