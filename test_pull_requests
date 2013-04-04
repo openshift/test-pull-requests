@@ -47,7 +47,8 @@ opts = GetoptLong.new(
   ["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
   ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
   ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
-  ["--repo",                     GetoptLong::REQUIRED_ARGUMENT]
+  ["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
+  ["--config",                   GetoptLong::REQUIRED_ARGUMENT]
 )
 
 args = {}
@@ -65,10 +66,11 @@ merge_pull_id = args[:merge_pull_request]
 local_merge_pull_id = args[:local_merge_pull_request]
 test_merge_pull_id = args[:test_merge_pull_request]
 pull_id_repo = args[:repo]
+config = args[:config]
 
 include Hub
 
-PROPERTIES_LOCATION = File.expand_path("~/.test_pull_requests.json")
+PROPERTIES_LOCATION = config || File.expand_path("~/.test_pull_requests.json")
 Properties = if File.exists? PROPERTIES_LOCATION
   JSON.parse(IO.read(PROPERTIES_LOCATION))
 else
@@ -919,10 +921,20 @@ popd
       job_name = branch_settings(branch, settings)['downstream_job_name']
       URI("#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/api/json")
     end
+    
+    def self.job_uri(branch, settings)
+      job_name = branch_settings(branch, settings)['jenkins_job_name']
+      URI("#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/api/json")
+    end
 
     def self.get_session(branch, settings)
       proxy = Net::HTTP::Proxy(Properties['proxy_host'], Properties['proxy_port'])
-      uri = downstream_job_uri(branch, settings)
+      uri = nil
+      if branch_settings(branch, settings)['downstream_job_name']
+        uri = downstream_job_uri(branch, settings)
+      else
+        uri = job_uri(branch, settings)
+      end
       session = proxy.new(uri.host, uri.port)
       session.use_ssl = true
       session.verify_mode = OpenSSL::SSL::VERIFY_NONE
@@ -974,16 +986,20 @@ popd
     end
 
     def self.is_project_stable?(branch, settings)
-      get_session(branch, settings).start do |http|
-        uri = downstream_job_uri(branch, settings)
-        request = Net::HTTP::Get.new uri.request_uri
-        response = http.request request
-        if response.kind_of? Net::HTTPSuccess
-          result = JSON.parse(response.body)["result"]
-          return  result == "SUCCESS" || result == "UNSTABLE"
-        else
-          raise "Jenkins connection error"
+      if branch_settings(branch, settings)['downstream_job_name']
+        get_session(branch, settings).start do |http|
+          uri = downstream_job_uri(branch, settings)
+          request = Net::HTTP::Get.new uri.request_uri
+          response = http.request request
+          if response.kind_of? Net::HTTPSuccess
+            result = JSON.parse(response.body)["result"]
+            return  result == "SUCCESS" || result == "UNSTABLE"
+          else
+            raise "Jenkins connection error"
+          end
         end
+      else
+        return true
       end
     end
 
