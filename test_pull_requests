@@ -336,8 +336,8 @@ set -ex
 pushd #{repo}
   git checkout #{pull_request['base']['ref']}
   git checkout -b tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
-  git pull #{pull_request['head']['repo']['html_url']} #{pull_request['head']['ref']}
-  git pull #{pull_request['head']['repo']['html_url']} #{pull_request['head']['ref']} --tags
+  git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']}
+  git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']} --tags
   git checkout #{pull_request['base']['ref']}
   git merge tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
 popd
