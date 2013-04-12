@@ -336,8 +336,8 @@ set -ex
 pushd #{repo}
   git checkout #{pull_request['base']['ref']}
   git checkout -b tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
-  git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']}
-  git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']} --tags
+  git pull #{pull_request['head']['repo']['html_url']} #{pull_request['head']['ref']}
+  git pull #{pull_request['head']['repo']['html_url']} #{pull_request['head']['ref']} --tags
   git checkout #{pull_request['base']['ref']}
   git merge tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
 popd
@@ -817,7 +817,7 @@ popd
               comments = get_comments(id, repo) if comments.nil?
               set_mergeable(id, repo, login, comments)
             else
-              if set_not_mergeable(id, repo, login) > 0
+              if set_not_mergeable(id, repo, login) == 0
                 mergeability_in_flux = true
               end
               next
