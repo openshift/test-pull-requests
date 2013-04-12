@@ -373,10 +373,13 @@ popd
       bot_comment = get_comment_with_prefix(issue_id, repo, settings['test_prefix'], comments)
 
       unless bot_comment
-        # No comment found, create a new one and yield to it
-        $stderr.puts "Creating placeholder comment"
-        evaluating_comment = "#{settings['test_prefix']} Evaluating for testing"
-        bot_comment = add_comment(issue_id, repo, evaluating_comment)
+        bot_comment = get_comment_with_prefix(issue_id, repo, settings['test_prefix'])
+        unless bot_comment
+          # No comment found, create a new one and yield to it
+          $stderr.puts "Creating placeholder comment"
+          evaluating_comment = "#{settings['test_prefix']} Evaluating for testing"
+          bot_comment = add_comment(issue_id, repo, evaluating_comment)
+        end
       end
 
       yield bot_comment['id'], bot_comment['body'], Time.parse(bot_comment['updated_at'])
@@ -561,10 +564,11 @@ popd
             repo_to_pull_request[addtl_pull_repo] = pull_request
             set_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login'])
           else
-            set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login'])
-            comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' is not mergeable"
-            $stderr.puts comment
-            add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
+            if set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login']) > 4
+              comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' is not mergeable"
+              $stderr.puts comment
+              add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
+            end
           end
         else
           comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' not found"
@@ -783,7 +787,7 @@ popd
       else
         `sed -i "/#{merge_id}/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergable`
       end
-      count == 0 #return if this was the first time (used as stability measure, Github becomes unstable for mergeability right after a merge happens)
+      count #return count of how many times this has happened (used as stability measure, Github becomes unstable for mergeability right after a merge happens)
     end
 
     #
@@ -813,7 +817,7 @@ popd
               comments = get_comments(id, repo) if comments.nil?
               set_mergeable(id, repo, login, comments)
             else
-              if set_not_mergeable(id, repo, login)
+              if set_not_mergeable(id, repo, login) > 0
                 mergeability_in_flux = true
               end
               next
