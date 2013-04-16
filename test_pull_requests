@@ -36,6 +36,8 @@ Options:
     Takes the id of the pull request to merge and locally merges into the branch specified by the pull request
 --test_merge_pull_request <pull_id>
     Takes the id of the pull request to merge and makes sure the merge will succeed before actually merging
+--merge_pretest_success
+    Merges all of the pretested pull requests
 --repo <repo>
     The repo of the pull request
 USAGE
@@ -47,6 +49,7 @@ opts = GetoptLong.new(
   ["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
   ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
   ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
+  ["--merge_pretest_success",    GetoptLong::NO_ARGUMENT],
   ["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
   ["--config",                   GetoptLong::REQUIRED_ARGUMENT]
 )
@@ -67,6 +70,7 @@ local_merge_pull_id = args[:local_merge_pull_request]
 test_merge_pull_id = args[:test_merge_pull_request]
 pull_id_repo = args[:repo]
 config = args[:config]
+merge_pretest_success = args[:merge_pretest_success]
 
 include Hub
 
@@ -271,12 +275,18 @@ module Hub
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
     end
     
-    def merge_pull_request(pull_id, repo, settings)
+    def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url)
       $stderr.puts "Merging pull request ##{pull_id} for repo '#{repo}'"
       pull_request, bot_comment = test_merge_pull_request(pull_id, repo, settings)
-      build_url = /^#{settings['test_prefix']} Running \((.*)\)/.match(bot_comment['body'])[1]
-
-      comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
+      build_url = nil
+      if merge_pretest_success_url
+        build_url = merge_pretest_success_url
+      elsif bot_comment['body'] =~ /^#{settings['test_prefix']} Running \((.*)\)/ 
+        build_url = $1
+      else
+        raise "'#{settings['name']}' pull request not found"
+      end
+      comment = comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
       begin
         branch = pull_request['base']['ref']
         b_settings = branch_settings(branch, settings)
@@ -588,7 +598,7 @@ popd
     # with the results.  Tests will be resubmitted if the issue has
     # been updated since the test have been run
     #
-    def process_pull_request(req, updated_at, changed_after_eval, comments, settings)
+    def process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
       id = req['number']
       branch = req['base']['ref']
       base_repo = req['base']['repo']['name']
@@ -630,78 +640,78 @@ popd
         submit_test_job = false
         resubmit_test_job = false
         case comment
-          when /^#{settings['test_prefix']} Evaluating/
-            $stderr.puts "Evaluating..."
-            # This is the state for a completely new comment
+        when /^#{settings['test_prefix']} Evaluating/
+          $stderr.puts "Evaluating..."
+          # This is the state for a completely new comment
 
-            if JenkinsAPI.is_project_stable?(branch, settings)
-              # Make sure there is a trigger in place that is still later than the updated dates of each of the pull requests
-              if trigger_updated_at
-                repo_to_pull_request.each do |repo, pull_request|
+          if JenkinsAPI.is_project_stable?(branch, settings)
+            # Make sure there is a trigger in place that is still later than the updated dates of each of the pull requests
+            if trigger_updated_at
+              repo_to_pull_request.each do |repo, pull_request|
+                next if repo == base_repo
+                if !user_trusted?(pull_request['user']['login'], repo, settings) && trigger_updated_at < Time.parse(pull_request['head']['repo']['updated_at'])
+                  create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
+                  break
+                end
+              end
+              update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings)
+              submit_test_job = true
+            else
+              create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
+            end
+          else
+            updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
+          end
+        when /^#{settings['test_prefix']} Waiting/
+          $stderr.puts "Waiting..."
+          # Only submit the tests if the project is stable
+          if JenkinsAPI.is_project_stable?(branch, settings)
+            submitted_tests = submitted_tests_for_branch(branch)
+            if !(submitted_tests[settings['name']] && comment =~ /^#{settings['test_prefix']} Waiting: You are in the build queue at position: \d+/)
+              $stderr.puts "Checking that evaluated times are still up to date"
+              if changed_after_eval
+                resubmit_test_job = true
+              else
+                submit_test_job = true
+                repo_to_pull_request.each do |repo, sub_pull_request|
                   next if repo == base_repo
-                  if !user_trusted?(pull_request['user']['login'], repo, settings) && trigger_updated_at < Time.parse(pull_request['head']['repo']['updated_at'])
-                    create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
+                  $stderr.puts "Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
+                  sub_pull_comments = get_comments(sub_pull_request['number'], repo)
+                  sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments)
+
+                  $stderr.puts "Updated at: #{sub_pull_request_updated_at}"
+                  $stderr.puts "Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
+                  if sub_pull_request_changed_after_eval
+                    resubmit_test_job = true
                     break
                   end
                 end
-                update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings)
-                submit_test_job = true
-              else
-                create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
               end
             else
-              updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
+              $stderr.puts "Job is already queued"
             end
-          when /^#{settings['test_prefix']} Waiting/
-            $stderr.puts "Waiting..."
-            # Only submit the tests if the project is stable
-            if JenkinsAPI.is_project_stable?(branch, settings)
-              submitted_tests = submitted_tests_for_branch(branch)
-              if !(submitted_tests[settings['name']] && comment =~ /^#{settings['test_prefix']} Waiting: You are in the build queue at position: \d+/)
-                $stderr.puts "Checking that evaluated times are still up to date"
-                if changed_after_eval
-                  resubmit_test_job = true
-                else
-                  submit_test_job = true
-                  repo_to_pull_request.each do |repo, sub_pull_request|
-                    next if repo == base_repo
-                    $stderr.puts "Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
-                    sub_pull_comments = get_comments(sub_pull_request['number'], repo)
-                    sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments)
+          end
+        when /^#{settings['test_prefix']} Running \((.*)\)/
+          # This state means that the tests are already running
+          # In this case we need to poll Jenkins to see if the build
+          # is finished
 
-                    $stderr.puts "Updated at: #{sub_pull_request_updated_at}"
-                    $stderr.puts "Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
-                    if sub_pull_request_changed_after_eval
-                      resubmit_test_job = true
-                      break
-                    end
-                  end
-                end
-              else
-                $stderr.puts "Job is already queued"
-              end
-            end
-          when /^#{settings['test_prefix']} Running \((.*)\)/
-            # This state means that the tests are already running
-            # In this case we need to poll Jenkins to see if the build
-            # is finished
+          # Capture the build_url from the regex match
+          build_url = $1
+          $stderr.puts "Running: #{build_url}consoleFull"
 
-            # Capture the build_url from the regex match
-            build_url = $1
-            $stderr.puts "Running: #{build_url}consoleFull"
-
-            # If the build is finished, update with the results
-            if JenkinsAPI.is_build_running?(build_url, branch, settings)
-              submitted_tests = submitted_tests_for_branch(branch)
-              submitted_tests[settings['name']] = true unless settings['allow_multiple'] 
-            else
-              result = JenkinsAPI.get_build_result(build_url, branch, settings)
-              updated_comment = "#{settings['test_prefix']} #{result} (#{build_url})"
-            end
+          # If the build is finished, update with the results
+          if JenkinsAPI.is_build_running?(build_url, branch, settings)
+            submitted_tests = submitted_tests_for_branch(branch)
+            submitted_tests[settings['name']] = true unless settings['allow_multiple'] 
           else
-            $stderr.puts "Finished..."
-            $stderr.puts comment if comment =~ /^#{settings['test_prefix']} .+ \((.*)\)/
-            resubmit_test_job = true
+            result = JenkinsAPI.get_build_result(build_url, branch, settings)
+            updated_comment = "#{settings['test_prefix']} #{result} (#{build_url})"
+          end
+        else
+          $stderr.puts "Finished..."
+          $stderr.puts comment if comment =~ /^#{settings['test_prefix']} .+ \((.*)\)/
+          resubmit_test_job = true
         end
         if resubmit_test_job
           submit_test_job = false
@@ -763,6 +773,43 @@ popd
             next if repo == base_repo
             create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], updated_comment)
           end
+        else
+          Properties['settings'].each_value do |s|
+            if s['pretest_settings_key'] && merge_pretest_success
+              if Properties['settings'][s['pretest_settings_key']]['name'] == settings['name']
+                if comment =~ /^#{settings['test_prefix']} SUCCESS \((.*)\)/
+                    build_url = $1
+                    trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, s)
+                    if trusted_trigger_time
+                      repo_to_pull_request.each do |repo, pull_request|
+                        next if repo == base_repo
+                        sub_pull_comments = get_comments(pull_request['number'], repo)
+                        trusted_trigger_time, trigger_login = get_trusted_trigger_time(pull_request, sub_pull_comments, s)
+                        unless trusted_trigger_time
+                          break
+                        end
+                      end
+  
+                      if trusted_trigger_time
+                        begin
+                          repo_to_pull_request.each do |repo, pull_request|
+                            test_merge_pull_request(pull_request['number'], repo, s)
+                          end if repo_to_pull_request.length > 0
+                          repo_to_pull_request.each do |repo, pull_request|
+                            $stderr.puts "*******Merging pretested pull request: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
+                            merge_pull_request(pull_request['number'], repo, s, build_url)
+                          end
+                        rescue Exception => e
+                          $stderr.puts e.message
+                          $stderr.puts e.backtrace
+                        end
+                      end
+                    end
+                end
+                break
+              end
+            end
+          end
         end
       end
       
@@ -794,7 +841,7 @@ popd
     # Processes a list of the valid pull requests that are mergeable
     # and are submitted by a trusted user
     #
-    def process_pull_requests
+    def process_pull_requests(merge_pretest_success)
       pull_requests = []
       mergeability_in_flux = false
       $repo_to_pull_regex.keys.each do |repo|
@@ -885,7 +932,7 @@ popd
         changed_after_eval = req_info[2]
         comments = req_info[3]
         settings = req_info[4]
-        process_pull_request(req, updated_at, changed_after_eval, comments, settings)
+        process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
         
         branch = req['base']['ref']
 
@@ -1091,6 +1138,6 @@ elsif test_merge_pull_id
 else
   # Process all the pull requests for testing
   $stderr.puts "Processing pull requests..."
-  @api_client.process_pull_requests
+  @api_client.process_pull_requests(merge_pretest_success)
   $stderr.puts "Done\n"
 end
