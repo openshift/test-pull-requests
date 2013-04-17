@@ -275,7 +275,7 @@ module Hub
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
     end
     
-    def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url)
+    def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
       $stderr.puts "Merging pull request ##{pull_id} for repo '#{repo}'"
       pull_request, bot_comment = test_merge_pull_request(pull_id, repo, settings)
       build_url = nil
