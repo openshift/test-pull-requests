@@ -778,22 +778,22 @@ popd
             if s['pretest_settings_key'] && merge_pretest_success
               if Properties['settings'][s['pretest_settings_key']]['name'] == settings['name']
                 if comment =~ /^#{settings['test_prefix']} SUCCESS \((.*)\)/
-                    build_url = $1
-                    trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, s)
-                    if trusted_trigger_time
-                      begin
-                        repo_to_pull_request.each do |repo, pull_request|
-                          test_merge_pull_request(pull_request['number'], repo, s)
-                        end if repo_to_pull_request.length > 0
-                        repo_to_pull_request.each do |repo, pull_request|
-                          $stderr.puts "*******Merging pretested pull request: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
-                          merge_pull_request(pull_request['number'], repo, s, build_url)
-                        end
-                      rescue Exception => e
-                        $stderr.puts e.message
-                        $stderr.puts e.backtrace
+                  build_url = $1
+                  trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, s)
+                  if trusted_trigger_time
+                    begin
+                      repo_to_pull_request.each do |repo, pull_request|
+                        test_merge_pull_request(pull_request['number'], repo, s)
+                      end if repo_to_pull_request.length > 0
+                      repo_to_pull_request.each do |repo, pull_request|
+                        $stderr.puts "*******Merging pretested pull request: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
+                        merge_pull_request(pull_request['number'], repo, s, build_url)
                       end
+                    rescue Exception => e
+                      $stderr.puts e.message
+                      $stderr.puts e.backtrace
                     end
+                  end
                 end
                 break
               end
