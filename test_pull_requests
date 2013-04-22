@@ -277,7 +277,7 @@ module Hub
     
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
       $stderr.puts "Merging pull request ##{pull_id} for repo '#{repo}'"
-      pull_request, bot_comment = test_merge_pull_request(pull_id, repo, settings)
+      pull_request, bot_comment, comments = test_merge_pull_request(pull_id, repo, settings)
       build_url = nil
       if merge_pretest_success_url
         build_url = merge_pretest_success_url
@@ -286,7 +286,7 @@ module Hub
       else
         raise "'#{settings['name']}' pull request not found"
       end
-      comment = comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
+      comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
       begin
         branch = pull_request['base']['ref']
         b_settings = branch_settings(branch, settings)
@@ -314,6 +314,17 @@ module Hub
           $stderr.puts "Retrying...  attempt: #{i+1}"
         end
       end
+      
+      if settings['trello_card_refs']
+        settings['trello_card_refs'].each do |ref|
+          values = get_values_from_pull_request(pull_id, repo, /(#{ref}_\d+)/i, pull_request, comments)
+          values.each do |value|
+            comment = "A pull request referencing this card has been merged: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_id}"
+            $stderr.puts `trello comment '#{comment}' --card-ref #{value}`
+          end
+        end
+      end
+      
       res.error! unless res.success?
     end
     
@@ -335,7 +346,7 @@ module Hub
         $stderr.puts "Updated at: #{pull_request_updated_at}"
         raise "Pull request was updated after testing started!"
       end
-      return pull_request, bot_comment
+      return pull_request, bot_comment, comments
     end
     
     def local_merge_pull_request(pull_id, repo)
@@ -454,6 +465,33 @@ popd
       end
     
       comment
+    end
+    
+    def get_values_from_pull_request(issue_id, repo, value_regex, pull_request, comments=nil)
+      values = []
+
+      comments = comments ? comments : get_comments(issue_id, repo)
+
+      add_values_by_regex(pull_request['title'], value_regex, values)
+      add_values_by_regex(pull_request['body'], value_regex, values)
+
+      comments.each do |c|
+        add_values_by_regex(c['body'], value_regex, values)
+      end
+      values.uniq!
+      values
+    end
+    
+    def add_values_by_regex(content, value_regex, values)
+      index = 0
+      while index do
+        index = content.index(value_regex, index)
+        if index
+          value = $1
+          index += value.length
+          values << value
+        end
+      end
     end
     
     def get_evaluated_time(comments)
