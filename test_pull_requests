@@ -45,13 +45,13 @@ USAGE
 end
 
 opts = GetoptLong.new(
-  ["--help",               "-h", GetoptLong::NO_ARGUMENT],
-  ["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
-  ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
-  ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
-  ["--merge_pretest_success",    GetoptLong::NO_ARGUMENT],
-  ["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
-  ["--config",                   GetoptLong::REQUIRED_ARGUMENT]
+["--help",               "-h", GetoptLong::NO_ARGUMENT],
+["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
+["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
+["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
+["--merge_pretest_success",    GetoptLong::NO_ARGUMENT],
+["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
+["--config",                   GetoptLong::REQUIRED_ARGUMENT]
 )
 
 args = {}
@@ -128,7 +128,6 @@ def submitted_tests_for_branch(branch)
   $submitted_tests[branch] ? $submitted_tests[branch] : $submitted_tests['*']
 end
 
-
 # Dynamically extend GitHubAPI to add methods that don't
 # require a local git project
 module Hub
@@ -138,17 +137,24 @@ module Hub
       rate_limit_remaining = res.header['X-RateLimit-Remaining']
       $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
       if rate_limit_remaining.to_i < 100
-        $stderr.puts "WARNING: Skipping processing due to rate limit approaching!" 
+        $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
         exit 0
       end
       res.error! unless res.success?
       res.data
     end
-    
-    def get_pull_request(id, repo)
-      res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s" % id
-      res.error! unless res.success?
-      res.data
+
+    def get_pull_request(id, repo, num_tries=1)
+      (1..num_tries).each do |i|
+        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s" % id
+        if res.success?
+          return res.data
+        elsif i == num_tries
+          res.error!
+        else
+          sleep 2
+        end
+      end
     end
 
     def is_mergeable?(id, repo, num_tries=2)
@@ -156,14 +162,14 @@ module Hub
       (1..num_tries).each do |i|
         pull_request = get_pull_request(id, repo)
         mergeable = pull_request['mergeable']
-        # Mergeable has become unreliable.  Resort to mergeable state for now if nil.  
+        # Mergeable has become unreliable.  Resort to mergeable state for now if nil.
         # TODO: Re-evaluate this at a later date
         if mergeable.nil?
           case pull_request['mergeable_state']
-            when 'checking', 'dirty', 'unstable'
-              mergeable = false
-            when 'unknown', 'clean', 'stable'
-              mergeable = !pull_request['merged']
+          when 'checking', 'dirty', 'unstable'
+            mergeable = false
+          when 'unknown', 'clean', 'stable'
+            mergeable = !pull_request['merged']
           end
         end
         return true if mergeable
@@ -214,7 +220,7 @@ module Hub
       res.error! unless res.success?
       res.data
     end
-    
+
     def update_status(sha, repo, state, url, desc)
       $stderr.puts "Updating status of '#{sha}' with state '#{state}'"
       params = { :state => state, :target_url => url, :description => desc}
@@ -255,7 +261,7 @@ module Hub
           return
         end
       end
-      
+
       # If the project is stable, submit the tests
       build_url = JenkinsAPI.submit_jenkins_job(repo_to_pull_request, branch, settings)
 
@@ -274,14 +280,14 @@ module Hub
 
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
     end
-    
+
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
       $stderr.puts "Merging pull request ##{pull_id} for repo '#{repo}'"
       pull_request, bot_comment, comments = test_merge_pull_request(pull_id, repo, settings)
       build_url = nil
       if merge_pretest_success_url
         build_url = merge_pretest_success_url
-      elsif bot_comment['body'] =~ /^#{settings['test_prefix']} Running \((.*)\)/ 
+      elsif bot_comment['body'] =~ /^#{settings['test_prefix']} Running \((.*)\)/
         build_url = $1
       else
         raise "'#{settings['name']}' pull request not found"
@@ -314,7 +320,7 @@ module Hub
           $stderr.puts "Retrying...  attempt: #{i+1}"
         end
       end
-      
+
       if settings['trello_card_refs']
         settings['trello_card_refs'].each do |ref|
           values = get_values_from_pull_request(pull_id, repo, /(#{ref}_\d+)/i, pull_request, comments)
@@ -324,10 +330,10 @@ module Hub
           end
         end
       end
-      
+
       res.error! unless res.success?
     end
-    
+
     def test_merge_pull_request(pull_id, repo, settings)
       $stderr.puts "Test merging pull request ##{pull_id} for repo '#{repo}'"
       comments = get_comments(pull_id, repo)
@@ -335,10 +341,10 @@ module Hub
       raise "Missing '#{settings['test_prefix']}' comment!" if bot_comment.nil?
       evaluated_time = get_evaluated_time(comments)
       raise "Missing evaluated flag!" if evaluated_time.nil?
-      pull_request = get_pull_request(pull_id, repo)
+      pull_request = get_pull_request(pull_id, repo, 10)
       mergeable = pull_request['mergeable']
       # This call isn't reliable so make sure
-      mergeable = is_mergeable?(pull_id, repo, 10) unless mergeable 
+      mergeable = is_mergeable?(pull_id, repo, 10) unless mergeable
       raise "Pull request isn't mergeable!" unless mergeable
       pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, comments)
       unless !pull_request_changed_after_eval
@@ -348,10 +354,10 @@ module Hub
       end
       return pull_request, bot_comment, comments
     end
-    
+
     def local_merge_pull_request(pull_id, repo)
       $stderr.puts "Local merging pull request ##{pull_id} for repo '#{repo}'"
-      pull_request = get_pull_request(pull_id, repo)
+      pull_request = get_pull_request(pull_id, repo, 10)
       merge_command = %{
 set -ex
 pushd #{repo}
@@ -379,7 +385,7 @@ popd
         req['Content-Length'] = req.body ? req.body.length : 0
       end
     end
-    
+
     def delete url
       perform_request url, :Delete do |req|
         yield req if block_given?
@@ -405,7 +411,7 @@ popd
 
       yield bot_comment['id'], bot_comment['body'], Time.parse(bot_comment['updated_at'])
     end
-    
+
     #
     # Creates or updates a comment with given prefix
     #
@@ -420,7 +426,7 @@ popd
       end
 
     end
-    
+
     #
     # Creates or updates a comment with given prefix
     #
@@ -431,7 +437,7 @@ popd
       end
       delete_comment(comment['id'], repo) if comment
     end
-    
+
     #
     # Gets a comment with given prefix
     #
@@ -450,12 +456,12 @@ popd
 
       prefix_comment
     end
-    
+
     def get_comment_with_value(issue_id, repo, value, comments=nil)
       comment = nil
-    
+
       comments = comments ? comments : get_comments(issue_id, repo)
-    
+
       # See if we can find an existing bot comment
       comments.each do |c|
         if c['body'] == value && (c['user']['login'] == Properties['bot_github_user'])
@@ -463,10 +469,10 @@ popd
           break
         end
       end
-    
+
       comment
     end
-    
+
     def get_values_from_pull_request(issue_id, repo, value_regex, pull_request, comments=nil)
       values = []
 
@@ -481,7 +487,7 @@ popd
       values.uniq!
       values
     end
-    
+
     def add_values_by_regex(content, value_regex, values)
       index = 0
       while index do
@@ -493,7 +499,7 @@ popd
         end
       end
     end
-    
+
     def get_evaluated_time(comments)
       comments = sort_comments(comments)
 
@@ -504,12 +510,12 @@ popd
       end
       return nil
     end
-    
+
     def get_trusted_trigger_time(pull_request, comments, settings)
       login = pull_request['user']['login']
       updated_at, changed_after_eval = get_updated_at(pull_request, comments)
       repo = pull_request['base']['repo']['name']
-        
+
       trigger_regex = /\[#{settings['name']}\]/i
       trigger_time = nil
       trigger_login = nil
@@ -532,7 +538,7 @@ popd
               if !trigger_time || trigger_comment_updated_at > trigger_time
                 trigger_time = trigger_comment_updated_at
                 trigger_login = comment_login
-              end 
+              end
               break
             end
           end
@@ -540,7 +546,7 @@ popd
       end
       return [trigger_time, trigger_login]
     end
-    
+
     def sort_comments(comments)
       comments = comments.sort_by do |comment|
         Time.parse(comment['updated_at'])
@@ -550,7 +556,7 @@ popd
     end
 
     # Updates all the bot markers for the involved pull requests.  To be called after you have validated the tests should be kicked off again
-    def update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings) 
+    def update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings)
       repo_to_pull_request.each do |repo, pull_request|
         pull_request_comments = get_comments(pull_request['number'], repo)
         test_prefix_comment = get_comment_with_prefix(pull_request['number'], repo, settings['test_prefix'], pull_request_comments)
@@ -566,14 +572,14 @@ popd
           add_comment(pull_request['number'], repo, (EVALUATED_MARKER % commits.last['sha']))
           # Delete the old evaluated markers
           pull_request_comments.each do |comment|
-            if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ EVALUATED_MARKER_REGEX 
+            if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ EVALUATED_MARKER_REGEX
               delete_comment(comment['id'], repo)
             end
           end
         end
       end
     end
-    
+
     def get_updated_at(pull_request, comments)
       updated_at = nil
       comments = sort_comments(comments)
@@ -596,17 +602,17 @@ popd
       else
         updated_at_str = commits.last['committer']['date']
       end
-      
+
       updated_at = Time.parse(updated_at_str)
       [updated_at, changed_after_eval]
     end
-    
+
     def add_coreq(addtl_pull_id, addtl_pull_repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at, base_pull_id, base_repo, comments)
       $stderr.puts "Processing dependency on pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}'"
       trusted = user_trusted?(login, addtl_pull_repo, settings)
       # It's ok if the user is trusted or the trigger was added after the comment
       if trusted || (user_trusted?(trigger_login, addtl_pull_repo, settings) && (trigger_updated_at && trigger_updated_at >= updated_at))
-        pull_request = get_pull_request(addtl_pull_id, addtl_pull_repo)
+        pull_request = get_pull_request(addtl_pull_id, addtl_pull_repo, 2)
         if pull_request
           if pull_request['mergeable']
             repo_to_pull_request[addtl_pull_repo] = pull_request
@@ -642,7 +648,7 @@ popd
       base_repo = req['base']['repo']['name']
       login = req['user']['login']
       repo_to_pull_request = {base_repo => req}
-      
+
       $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
 
       trigger_updated_at, trigger_login = get_trusted_trigger_time(req, comments, settings)
@@ -741,7 +747,7 @@ popd
           # If the build is finished, update with the results
           if JenkinsAPI.is_build_running?(build_url, branch, settings)
             submitted_tests = submitted_tests_for_branch(branch)
-            submitted_tests[settings['name']] = true unless settings['allow_multiple'] 
+            submitted_tests[settings['name']] = true unless settings['allow_multiple']
           else
             result = JenkinsAPI.get_build_result(build_url, branch, settings)
             updated_comment = "#{settings['test_prefix']} #{result} (#{build_url})"
@@ -839,9 +845,9 @@ popd
           end
         end
       end
-      
+
     end
-    
+
     def set_mergeable(id, repo, login, comments=nil)
       merge_id="#{repo}_#{id}_#{login}"
       comments = get_comments(id, repo) if comments.nil?
@@ -876,10 +882,10 @@ popd
         list_pull_requests(repo).each do |req|
           id = req['number']
           $stderr.puts "Analyzing pull request ##{id}"
-        
+
           branch = req['base']['ref']
-          
-          if $branches.include?(branch) || $branches.include?('*') 
+
+          if $branches.include?(branch) || $branches.include?('*')
 
             login = req['user']['login']
 
@@ -938,7 +944,7 @@ popd
           end
         end
       end
-      
+
       if mergeability_in_flux
         $stderr.puts "Waiting till next run to see if mergeability is in flux"
         exit
@@ -960,20 +966,17 @@ popd
         comments = req_info[3]
         settings = req_info[4]
         process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
-        
+
         branch = req['base']['ref']
 
         submitted_tests = submitted_tests_for_branch(branch)
-        
 
-        
-        
         if !settings['allow_multiple'] && submitted_tests[settings['name']]
           comments = get_comments(req['number'], req['base']['repo']['name'])
-            
+
           bot_comment = get_comment_with_prefix(req['number'], req['base']['repo']['name'], settings['test_prefix'], comments)
           if bot_comment && (bot_comment['body'] =~ /^#{settings['test_prefix']} Waiting/)
-            skipped_count_branch = skipped_count[branch] ? skipped_count[branch] : skipped_count['*']  
+            skipped_count_branch = skipped_count[branch] ? skipped_count[branch] : skipped_count['*']
             skipped_count_branch[settings['name']] = 0 if skipped_count_branch[settings['name']].nil?
             skipped_count_branch[settings['name']] += 1
             queued_comment = "#{settings['test_prefix']} Waiting: You are in the build queue at position: #{skipped_count_branch[settings['name']].to_s}"
@@ -994,12 +997,11 @@ popd
   # A class to encapsulate the Jenkins API interaction
   #
   class JenkinsAPI
-
     def self.downstream_job_uri(branch, settings)
       job_name = branch_settings(branch, settings)['downstream_job_name']
       URI("#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/api/json")
     end
-    
+
     def self.job_uri(branch, settings)
       job_name = branch_settings(branch, settings)['jenkins_job_name']
       URI("#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/api/json")
@@ -1098,7 +1100,7 @@ popd
     def self.to_api_url build_url
       URI(build_url + "/api/json")
     end
-    
+
     def self.is_previous_build_running?(branch, settings)
       build_num = get_next_build(branch, settings) - 1
       build_url = Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/#{build_num}/"
