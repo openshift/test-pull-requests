@@ -136,11 +136,14 @@ module Hub
       res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls"
       rate_limit_remaining = res.header['X-RateLimit-Remaining']
       $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
-      if rate_limit_remaining.to_i < 100
+      if rate_limit_remaining && rate_limit_remaining.to_i < 100
         $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
         exit 0
       end
-      res.error! unless res.success?
+      unless res.success?
+        $stderr.puts res.body
+        res.error!
+      end
       res.data
     end
 
@@ -381,6 +384,7 @@ popd
           req.body = JSON.dump params
           req['Content-Type'] = 'application/json'
         end
+        req['User-Agent'] = Properties['bot_github_user']
         yield req if block_given?
         req['Content-Length'] = req.body ? req.body.length : 0
       end
@@ -388,6 +392,7 @@ popd
 
     def delete url
       perform_request url, :Delete do |req|
+        req['User-Agent'] = Properties['bot_github_user']
         yield req if block_given?
       end
     end
