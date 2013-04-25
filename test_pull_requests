@@ -398,7 +398,7 @@ popd
           req['User-Agent'] = Properties['bot_github_user']
         end
         yield req if block_given?
-        req['Content-Length'] = byte_size req.body
+        req['Content-Length'] = req.body ? req.body.length : 0
       end
     end
     
