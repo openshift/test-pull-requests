@@ -530,13 +530,15 @@ popd
     end
 
     def add_values_by_regex(content, value_regex, values)
-      index = 0
-      while index do
-        index = content.index(value_regex, index)
-        if index
-          value = $1
-          index += value.length
-          values << value
+      if content
+        index = 0
+        while index do
+          index = content.index(value_regex, index)
+          if index
+            value = $1
+            index += value.length
+            values << value
+          end
         end
       end
     end
