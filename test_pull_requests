@@ -163,7 +163,7 @@ module Hub
     def is_mergeable?(id, repo, num_tries=2)
       # This call isn't reliable so make sure
       (1..num_tries).each do |i|
-        pull_request = get_pull_request(id, repo)
+        pull_request = get_pull_request(id, repo, num_tries)
         mergeable = pull_request['mergeable']
         # Mergeable has become unreliable.  Resort to mergeable state for now if nil.
         # TODO: Re-evaluate this at a later date
