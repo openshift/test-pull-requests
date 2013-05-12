@@ -176,7 +176,7 @@ module Hub
           end
         end
         return true if mergeable
-        sleep 10 if i > 1 && i < num_tries
+        sleep 1 if i > 1 && i < num_tries
       end
       return false
     end
