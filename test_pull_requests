@@ -111,8 +111,13 @@ ACTION_NOT_MERGE            = "#{ACTION_PREFIX} Pull request cannot be automatic
 ACTION_NOT_TEAM             = "#{ACTION_PREFIX} Please contact #{Properties['irc_channel']} to have this pull request manually reviewed and tested"
 ACTION_UNSUPPORTED_BRANCH   = "#{ACTION_PREFIX} Only pull request(s) from #{$branches.pretty_inspect.chomp} are handled by the #{Properties['bot_github_user']}"
 
-EVALUATED_MARKER = "Evaluated for #{Properties['product'].downcase} up to %s"
-EVALUATED_MARKER_REGEX = /^Evaluated for #{Properties['product'].downcase} up to (.*)/
+def evaluated_marker(repo)
+  "Evaluated for #{Properties['repo_to_product'][repo].downcase} up to %s"
+end
+
+def evaluated_marker_regex(repo)
+  /^Evaluated for #{Properties['repo_to_product'][repo].downcase} up to (.*)/
+end
 
 def branch_settings(branch, settings)
   s = nil
@@ -342,7 +347,7 @@ module Hub
       comments = get_comments(pull_id, repo)
       bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'], comments)
       raise "Missing '#{settings['test_prefix']}' comment!" if bot_comment.nil?
-      evaluated_time = get_evaluated_time(comments)
+      evaluated_time = get_evaluated_time(comments, repo)
       raise "Missing evaluated flag!" if evaluated_time.nil?
       pull_request = get_pull_request(pull_id, repo, 10)
       mergeable = pull_request['mergeable']
@@ -543,11 +548,11 @@ popd
       end
     end
 
-    def get_evaluated_time(comments)
+    def get_evaluated_time(comments, repo)
       comments = sort_comments(comments)
 
       comments.each do |comment|
-        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ EVALUATED_MARKER_REGEX
+        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(repo)
           return Time.parse(comment['updated_at'])
         end
       end
@@ -564,7 +569,7 @@ popd
       trigger_login = nil
       if pull_request['title'] =~ trigger_regex || pull_request['body'] =~ trigger_regex
         if user_trusted?(login, repo, settings)
-          evaluated_time = get_evaluated_time(comments)
+          evaluated_time = get_evaluated_time(comments, repo)
           trigger_time = evaluated_time || Time.parse(pull_request['updated_at'])
           trigger_login = login
         end
@@ -607,15 +612,15 @@ popd
           being_queued_comment = "#{settings['test_prefix']} Waiting: Determining build queue position"
           create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], being_queued_comment, pull_request_comments)
         end
-        pull_request_evaluated_time = get_evaluated_time(pull_request_comments)
+        pull_request_evaluated_time = get_evaluated_time(pull_request_comments, repo)
         pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments)
         if pull_request_changed_after_eval || pull_request_evaluated_time < trigger_updated_at
           commits = get_commits(pull_request['number'], repo)
           # Add a new evaluated marker
-          add_comment(pull_request['number'], repo, (EVALUATED_MARKER % commits.last['sha']))
+          add_comment(pull_request['number'], repo, (evaluated_marker(repo) % commits.last['sha']))
           # Delete the old evaluated markers
           pull_request_comments.each do |comment|
-            if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ EVALUATED_MARKER_REGEX
+            if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(repo)
               delete_comment(comment['id'], repo)
             end
           end
@@ -628,7 +633,7 @@ popd
       comments = sort_comments(comments)
       previous_sha = nil
       comments.each do |comment|
-        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ EVALUATED_MARKER_REGEX
+        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(pull_request['base']['repo']['name'])
           previous_sha = $1
         end
       end
@@ -695,7 +700,7 @@ popd
       $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
 
       trigger_updated_at, trigger_login = get_trusted_trigger_time(req, comments, settings)
-      evaluated_time = get_evaluated_time(comments)
+      evaluated_time = get_evaluated_time(comments, base_repo)
 
       $stderr.puts "Updated at: #{updated_at}"
       $stderr.puts "Changed after evaluated time: #{changed_after_eval}"
