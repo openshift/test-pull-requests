@@ -137,19 +137,21 @@ end
 # require a local git project
 module Hub
   class GitHubAPI
-    def list_pull_requests(repo)
-      res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls"
-      rate_limit_remaining = res.header['X-RateLimit-Remaining']
-      $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
-      if rate_limit_remaining && rate_limit_remaining.to_i < 100
-        $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
-        exit 0
+    def list_pull_requests(repo, num_tries=3)
+      (1..num_tries).each do |i|
+        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls"
+        rate_limit_remaining = res.header['X-RateLimit-Remaining']
+        $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
+        if rate_limit_remaining && rate_limit_remaining.to_i < 100
+          $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
+          exit 0
+        end
+        return res.data if res.success?
+        if i == num_tries
+          $stderr.puts res.body
+          res.error!
+        end
       end
-      unless res.success?
-        $stderr.puts res.body
-        res.error!
-      end
-      res.data
     end
 
     def get_pull_request(id, repo, num_tries=1)
@@ -160,12 +162,12 @@ module Hub
         elsif i == num_tries
           res.error!
         else
-          sleep 2
+          sleep 1
         end
       end
     end
 
-    def is_mergeable?(id, repo, num_tries=2)
+    def is_mergeable?(id, repo, num_tries=3)
       # This call isn't reliable so make sure
       (1..num_tries).each do |i|
         pull_request = get_pull_request(id, repo, num_tries)
@@ -186,7 +188,7 @@ module Hub
       return false
     end
 
-    def get_commits(id, repo)
+    def get_commits(id, repo, num_tries=3)
       commits = nil
       if $commits[repo]
         commits = $commits[repo][id]
@@ -194,47 +196,64 @@ module Hub
         $commits[repo] = {}
       end
       unless commits
-        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s/commits" % id
-        res.error! unless res.success?
-        commits = res.data
-        $commits[repo][id] = commits
+        (1..num_tries).each do |i|
+          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s/commits" % id
+          if res.success?
+            commits = res.data
+            $commits[repo][id] = commits
+            break
+          elsif i == num_tries
+            res.error!
+          end
+        end
       end
       commits
     end
 
-    def get_comments(issue_id, repo)
-      res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments" % issue_id
-      res.error! unless res.success?
-      res.data
+    def get_comments(issue_id, repo, num_tries=3)
+      (1..num_tries).each do |i|
+        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments" % issue_id
+        return res.data if res.success?
+        res.error! if i == num_tries
+      end
     end
 
-    def delete_comment(comment_id, repo)
+    def delete_comment(comment_id, repo, num_tries=3)
       $stderr.puts "Deleting comment ##{comment_id}"
-      res = delete "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id]
-      res.error! unless res.success?
+      (1..num_tries).each do |i|
+        res = delete "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id]
+        break if res.success?
+        res.error! if i == num_tries
+      end
     end
 
-    def add_comment(issue_id, repo, comment)
+    def add_comment(issue_id, repo, comment, num_tries=3)
       params = { :body => comment }
-      res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments" % [issue_id], params
-      res.error! unless res.success?
-      res.data
+      (1..num_tries).each do |i|
+        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments" % [issue_id], params
+        return res.data if res.success?
+        res.error! if i == num_tries
+      end
     end
 
-    def update_comment(comment_id, repo, comment)
+    def update_comment(comment_id, repo, comment, num_tries=3)
       $stderr.puts "Updating comment ##{comment_id} with #{comment}"
       params = { :body => comment }
-      res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id], params
-      res.error! unless res.success?
-      res.data
+      (1..num_tries).each do |i|
+        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id], params
+        return res.data if res.success?
+        res.error! if i == num_tries
+      end
     end
 
-    def update_status(sha, repo, state, url, desc)
+    def update_status(sha, repo, state, url, desc, num_tries=3)
       $stderr.puts "Updating status of '#{sha}' with state '#{state}'"
       params = { :state => state, :target_url => url, :description => desc}
-      res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
-      res.error! unless res.success?
-      res.data
+      (1..num_tries).each do |i|
+        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
+        return res.data if res.success?
+        res.error! if i == num_tries
+      end
     end
 
     # Verifies the user is part of a valid team
