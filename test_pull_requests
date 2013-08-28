@@ -279,7 +279,7 @@ module Hub
     end
 
     # Submit tests to Jenkins and update the comment
-    def submit_tests(repo_to_pull_request, base_repo, branch, comment_id, settings)
+    def submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
       submitted_tests = submitted_tests_for_branch(branch)
       unless settings['allow_multiple']
         if submitted_tests[settings['name']] || JenkinsAPI.is_previous_build_running?(branch, settings)
@@ -290,7 +290,7 @@ module Hub
       end
 
       # If the project is stable, submit the tests
-      build_url = JenkinsAPI.submit_jenkins_job(repo_to_pull_request, branch, settings)
+      build_url = JenkinsAPI.submit_jenkins_job(repo_to_pull_request, branch, extended_tests, settings)
 
       running_comment = "#{settings['test_prefix']} Running (#{build_url})"
 
@@ -413,7 +413,7 @@ popd
         req['Content-Length'] = req.body ? req.body.length : 0
       end
     end
-    
+
     def post url, params = nil
       perform_request url, :Post do |req|
         if params
@@ -425,7 +425,7 @@ popd
         req['Content-Length'] = req.body ? req.body.length : 0
       end
     end
-    
+
     def perform_request url, type
       url = URI.parse url unless url.respond_to? :host
 
@@ -612,6 +612,32 @@ popd
         end
       end
       return [trigger_time, trigger_login]
+    end
+
+    def get_extended_tests(pull_request, comments, settings)
+      extended_tests = []
+      if settings['allow_multiple']
+        extended_regex = /\[extended *:( *\w+ *(, *\w+ *)+)\]/i
+        if pull_request['title'] =~ extended_regex
+          extended_tests += $1.split(',')
+        end
+
+        if pull_request['body'] =~ extended_regex
+          extended_tests += $1.split(',')
+        end
+
+        comments.each do |comment|
+          if comment['body'] =~ extended_regex
+            extended_tests += $1.split(',')
+          end
+        end
+        extended_tests.each do |test|
+          test.downcase!
+          test.strip!
+        end
+        extended_tests.uniq!
+      end
+      return extended_tests
     end
 
     def sort_comments(comments)
@@ -877,7 +903,8 @@ popd
         end
         if submit_test_job
           delete_comment_with_prefix(id, base_repo, ACTION_PREFIX, comments)
-          submit_tests(repo_to_pull_request, base_repo, branch, comment_id, settings)
+          extended_tests = get_extended_tests(req, comments, settings)
+          submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
         elsif updated_comment
           update_comment(comment_id, base_repo, updated_comment)
           repo_to_pull_request.each do |repo, pull_request|
@@ -1088,7 +1115,7 @@ popd
       return session
     end
 
-    def self.submit_jenkins_job(repo_to_pull_request, branch, settings)
+    def self.submit_jenkins_job(repo_to_pull_request, branch, extended_tests, settings)
       # First, get the next jenkins build number
       next_build_num = get_next_build(branch, settings)
       build_uri = URI(Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/buildWithParameters?token=#{branch_settings(branch, settings)['build_token']}")
@@ -1101,6 +1128,11 @@ popd
           pull_id_params += "&#{pull_id_param}=#{pull_request['number']}"
           first_valid_repo = repo unless first_valid_repo
         end
+      end
+
+      extended_tests_param = branch_settings(branch, settings)['extended_tests_param']
+      if !extended_tests.empty? && extended_tests_param
+        pull_id_params += "&#{extended_tests_param}=#{extended_tests.join(',')}"
       end
 
       if first_valid_repo
