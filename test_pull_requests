@@ -617,7 +617,7 @@ popd
     def get_extended_tests(pull_request, comments, settings)
       extended_tests = []
       if settings['allow_multiple']
-        extended_regex = /\[extended *:( *\w+ *(, *\w+ *)+)\]/i
+        extended_regex = /\[extended *:( *\w+ *(, *\w+ *)*)\]/i
         if pull_request['title'] =~ extended_regex
           extended_tests += $1.split(',')
         end
