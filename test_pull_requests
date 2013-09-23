@@ -369,6 +369,7 @@ module Hub
       evaluated_time = get_evaluated_time(comments, repo)
       raise "Missing evaluated flag!" if evaluated_time.nil?
       pull_request = get_pull_request(pull_id, repo, 10)
+      raise "Pull request isn't open!" unless pull_request['state'] == 'open'
       mergeable = pull_request['mergeable']
       # This call isn't reliable so make sure
       mergeable = is_mergeable?(pull_id, repo, 10) unless mergeable
