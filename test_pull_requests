@@ -1166,7 +1166,7 @@ popd
     end
 
     def self.is_project_stable?(branch, settings)
-      if branch_settings(branch, settings)['downstream_job_name']
+      if branch_settings(branch, settings)['downstream_job_name'] && branch_settings(branch, settings)['require_downstream_stability']
         get_session(branch, settings).start do |http|
           uri = downstream_job_uri(branch, settings)
           request = Net::HTTP::Get.new uri.request_uri
