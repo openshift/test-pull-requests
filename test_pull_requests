@@ -1111,7 +1111,7 @@ popd
         uri = job_uri(branch, settings)
       end
       session = proxy.new(uri.host, uri.port)
-      session.use_ssl = true
+      session.use_ssl = true if uri.scheme == "https"
       session.verify_mode = OpenSSL::SSL::VERIFY_NONE
       return session
     end
