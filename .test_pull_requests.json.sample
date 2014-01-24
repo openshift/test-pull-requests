@@ -34,6 +34,9 @@
         "myrepo1": ["111111", "222222", "333333"],
         "myrepo2": ["111111", "444444"]
       },
+      "repo_to_orgs": {
+        "myrepo1": ["myorg", "anotherorg"],
+      },
       "repo_to_pull_id_param": {
         "myrepo1": "MYREPO1_PULL_ID",
         "myrepo2": "MYREPO2_PULL_ID"
