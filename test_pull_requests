@@ -303,6 +303,8 @@ module Hub
             update_comment(comment_id, repo, running_comment)
           end
         end
+        commits = get_commits(pull_request['number'], repo)
+        update_status(commits.last['sha'], repo, 'pending', build_url, "Testing")
       end
 
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
@@ -348,6 +350,8 @@ module Hub
         end
       end
 
+      res.error! unless res.success?
+
       if settings['trello_card_refs']
         settings['trello_card_refs'].each do |ref|
           values = get_values_from_pull_request(pull_id, repo, /(#{ref}_\d+)/i, pull_request, comments)
@@ -358,7 +362,8 @@ module Hub
         end
       end
 
-      res.error! unless res.success?
+      commits = get_commits(pull_request['number'], repo)
+      update_status(commits.last['sha'], repo, 'success', build_url, "Merged")
     end
 
     def test_merge_pull_request(pull_id, repo, settings)
@@ -773,6 +778,8 @@ popd
       end
 
       updated_comment = nil
+      status = nil
+      build_url = nil
       # Find the bot comment for this pull request (or create one)
       process_or_create_comment(id, base_repo, settings, comments) do |comment_id, comment, comment_updated_at|
         submit_test_job = false
@@ -845,6 +852,7 @@ popd
           else
             result = JenkinsAPI.get_build_result(build_url, branch, settings)
             updated_comment = "#{settings['test_prefix']} #{result} (#{build_url})"
+            status = result == 'SUCCESS' ? 'success' : 'failure'
           end
         else
           $stderr.puts "Finished..."
@@ -909,6 +917,10 @@ popd
         elsif updated_comment
           update_comment(comment_id, base_repo, updated_comment)
           repo_to_pull_request.each do |repo, pull_request|
+            if status && build_url
+              commits = get_commits(pull_request['number'], repo)
+              update_status(commits.last['sha'], repo, status, build_url, "Tested")
+            end
             next if repo == base_repo
             create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], updated_comment)
           end
