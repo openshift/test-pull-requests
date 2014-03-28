@@ -36,6 +36,8 @@ Options:
     Takes the id of the pull request to merge and locally merges into the branch specified by the pull request
 --test_merge_pull_request <pull_id>
     Takes the id of the pull request to merge and makes sure the merge will succeed before actually merging
+--mark_test_success <pull_id>
+    Marks a pull request with success status for the test_settings configuration
 --merge_pretest_success
     Merges all of the pretested pull requests
 --repo <repo>
@@ -49,6 +51,7 @@ opts = GetoptLong.new(
 ["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
 ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
 ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
+["--mark_test_success",        GetoptLong::REQUIRED_ARGUMENT],
 ["--merge_pretest_success",    GetoptLong::NO_ARGUMENT],
 ["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
 ["--config",                   GetoptLong::REQUIRED_ARGUMENT]
@@ -68,6 +71,7 @@ end
 merge_pull_id = args[:merge_pull_request]
 local_merge_pull_id = args[:local_merge_pull_request]
 test_merge_pull_id = args[:test_merge_pull_request]
+mark_test_success_pull_id = args[:mark_test_success]
 pull_id_repo = args[:repo]
 config = args[:config]
 merge_pretest_success = args[:merge_pretest_success]
@@ -308,6 +312,22 @@ module Hub
       end
 
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
+    end
+
+    def mark_test_success(pull_id, repo, settings)
+      $stderr.puts "Marking SUCCESS for pull request ##{pull_id} in repo '#{repo}'"
+      bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'])
+      build_url = nil
+      if bot_comment['body'] =~ /^#{settings['test_prefix']} Running \((.*)\)/
+        build_url = $1
+      else
+        raise "'#{settings['name']}' pull request not found"
+      end
+      comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
+      update_comment(bot_comment['id'], repo, comment)
+
+      commits = get_commits(pull_id, repo)
+      update_status(commits.last['sha'], repo, 'success', build_url, "Tested")
     end
 
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
@@ -1272,6 +1292,8 @@ end
 
 if merge_pull_id
   @api_client.merge_pull_request(merge_pull_id, pull_id_repo, Properties['settings']['merge_test_settings'])
+elsif mark_test_success_pull_id
+  @api_client.mark_test_success(mark_test_success_pull_id, pull_id_repo, Properties['settings']['test_settings'])
 elsif local_merge_pull_id
   @api_client.local_merge_pull_request(local_merge_pull_id, pull_id_repo)
 elsif test_merge_pull_id
