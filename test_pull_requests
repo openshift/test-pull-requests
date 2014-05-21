@@ -1180,7 +1180,7 @@ popd
       get_session(branch, settings).start do |http|
         request = Net::HTTP::Get.new build_uri.request_uri + "#{pull_id_params}"
         response = http.request request
-        if response.kind_of? Net::HTTPFound
+        if (response.kind_of? Net::HTTPFound) || (response.kind_of? Net::HTTPCreated)
           $stderr.puts "Successfully submitted job for pull request"
 
           # Block until Jenkins actually increments the build number (this isn't transactional)
