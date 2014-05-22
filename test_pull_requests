@@ -256,7 +256,7 @@ module Hub
       (1..num_tries).each do |i|
         res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
         return res.data if res.success?
-        res.error! if i == num_tries
+        #res.error! if i == num_tries
       end
     end
 
