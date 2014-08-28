@@ -977,9 +977,18 @@ popd
 
     def set_mergeable(id, repo, login, comments=nil)
       merge_id="#{repo}_#{id}_#{login}"
-      comments = get_comments(id, repo) if comments.nil?
-      `sed -i "/#{merge_id}/d" ~/test_pull_request_not_mergable`
-      delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments)
+      count = 0
+      previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergable`.chomp
+      if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
+        count = $1.to_i
+      end
+      if count <= 0
+        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable`
+        comments = get_comments(id, repo) if comments.nil?
+        delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments)
+      else
+        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count-1).to_s}" >> ~/test_pull_request_not_mergable`
+      end
     end
 
     def set_not_mergeable(id, repo, login)
@@ -989,10 +998,10 @@ popd
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count > 40 # ~2 hours
+      if count >= 20 # ~1 hours
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
       else
-        `sed -i "/#{merge_id}/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergable`
+        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergable`
       end
       count #return count of how many times this has happened (used as stability measure, Github becomes unstable for mergeability right after a merge happens)
     end
