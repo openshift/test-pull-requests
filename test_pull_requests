@@ -250,9 +250,9 @@ module Hub
       end
     end
 
-    def update_status(sha, repo, state, url, desc, num_tries=3)
+    def update_status(context, sha, repo, state, url, desc, num_tries=3)
       $stderr.puts "Updating status of '#{sha}' with state '#{state}'"
-      params = { :state => state, :target_url => url, :description => desc}
+      params = { :state => state, :target_url => url, :description => desc, :context => context}
       (1..num_tries).each do |i|
         res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
         return res.data if res.success?
@@ -308,7 +308,7 @@ module Hub
           end
         end
         commits = get_commits(pull_request['number'], repo)
-        update_status(commits.last['sha'], repo, 'pending', build_url, "Testing")
+        update_status(settings['test_prefix'], commits.last['sha'], repo, 'pending', build_url, "Testing")
       end
 
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
@@ -327,7 +327,7 @@ module Hub
       update_comment(bot_comment['id'], repo, comment)
 
       commits = get_commits(pull_id, repo)
-      update_status(commits.last['sha'], repo, 'success', build_url, "Tested")
+      update_status(settings['test_prefix'], commits.last['sha'], repo, 'success', build_url, "Tested")
     end
 
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
@@ -383,7 +383,7 @@ module Hub
       end
 
       commits = get_commits(pull_request['number'], repo)
-      update_status(commits.last['sha'], repo, 'success', build_url, "Merged")
+      update_status(settings['test_prefix'], commits.last['sha'], repo, 'success', build_url, "Merged")
     end
 
     def test_merge_pull_request(pull_id, repo, settings)
@@ -939,7 +939,7 @@ popd
           repo_to_pull_request.each do |repo, pull_request|
             if status && build_url
               commits = get_commits(pull_request['number'], repo)
-              update_status(commits.last['sha'], repo, status, build_url, "Tested")
+              update_status(settings['test_prefix'], commits.last['sha'], repo, status, build_url, "Tested")
             end
             next if repo == base_repo
             create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], updated_comment)
