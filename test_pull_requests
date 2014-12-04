@@ -192,7 +192,7 @@ module Hub
       return false
     end
 
-    def get_commits(id, repo, num_tries=3)
+    def get_last_commit(id, repo, num_tries=3)
       commits = nil
       if $commits[repo]
         commits = $commits[repo][id]
@@ -201,7 +201,7 @@ module Hub
       end
       unless commits
         (1..num_tries).each do |i|
-          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s/commits" % id
+          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s/commits?per_page=100" % id
           if res.success?
             commits = res.data
             $commits[repo][id] = commits
@@ -211,15 +211,26 @@ module Hub
           end
         end
       end
-      commits
+      commits.last
     end
 
     def get_comments(issue_id, repo, num_tries=3)
-      (1..num_tries).each do |i|
-        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments" % issue_id
-        return res.data if res.success?
-        res.error! if i == num_tries
+      page = 1
+      comments = []
+      last_comments = nil
+      while (!last_comments || last_comments.length == 100)
+        (1..num_tries).each do |i|
+          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments?page=#{page}&per_page=100" % issue_id
+          if res.success?
+            last_comments = res.data
+            comments += last_comments
+            page += 1
+            break
+          end
+          res.error! if i == num_tries
+        end
       end
+      comments
     end
 
     def delete_comment(comment_id, repo, num_tries=3)
@@ -307,8 +318,8 @@ module Hub
             update_comment(comment_id, repo, running_comment)
           end
         end
-        commits = get_commits(pull_request['number'], repo)
-        update_status(settings['test_prefix'], commits.last['sha'], repo, 'pending', build_url, "Testing")
+        commit = get_last_commit(pull_request['number'], repo)
+        update_status(settings['test_prefix'], commit['sha'], repo, 'pending', build_url, "Testing")
       end
 
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
@@ -326,8 +337,8 @@ module Hub
       comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
       update_comment(bot_comment['id'], repo, comment)
 
-      commits = get_commits(pull_id, repo)
-      update_status(settings['test_prefix'], commits.last['sha'], repo, 'success', build_url, "Tested")
+      commit = get_last_commit(pull_id, repo)
+      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Tested")
     end
 
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
@@ -382,8 +393,8 @@ module Hub
         end
       end
 
-      commits = get_commits(pull_request['number'], repo)
-      update_status(settings['test_prefix'], commits.last['sha'], repo, 'success', build_url, "Merged")
+      commit = get_last_commit(pull_request['number'], repo)
+      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Merged")
     end
 
     def test_merge_pull_request(pull_id, repo, settings)
@@ -686,9 +697,9 @@ popd
         pull_request_evaluated_time = get_evaluated_time(pull_request_comments, repo)
         pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments)
         if pull_request_changed_after_eval || pull_request_evaluated_time < trigger_updated_at
-          commits = get_commits(pull_request['number'], repo)
+          commit = get_last_commit(pull_request['number'], repo)
           # Add a new evaluated marker
-          add_comment(pull_request['number'], repo, (evaluated_marker(repo) % commits.last['sha']))
+          add_comment(pull_request['number'], repo, (evaluated_marker(repo) % commit['sha']))
           # Delete the old evaluated markers
           pull_request_comments.each do |comment|
             if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(repo)
@@ -708,18 +719,18 @@ popd
           previous_sha = $1
         end
       end
-      commits = get_commits(pull_request['number'], pull_request['base']['repo']['name'])
+      commit = get_last_commit(pull_request['number'], pull_request['base']['repo']['name'])
 
       changed_after_eval = true
-      if commits.last['sha'] == previous_sha
+      if commit['sha'] == previous_sha
         changed_after_eval = false
       end
       #GitHub API isn't consistent here
       updated_at_str = nil
-      if commits.last.has_key?('commit')
-        updated_at_str = commits.last['commit']['committer']['date']
+      if commit.has_key?('commit')
+        updated_at_str = commit['commit']['committer']['date']
       else
-        updated_at_str = commits.last['committer']['date']
+        updated_at_str = commit['committer']['date']
       end
 
       updated_at = Time.parse(updated_at_str)
@@ -938,8 +949,8 @@ popd
           update_comment(comment_id, base_repo, updated_comment)
           repo_to_pull_request.each do |repo, pull_request|
             if status && build_url
-              commits = get_commits(pull_request['number'], repo)
-              update_status(settings['test_prefix'], commits.last['sha'], repo, status, build_url, "Tested")
+              commit = get_last_commit(pull_request['number'], repo)
+              update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, "Tested")
             end
             next if repo == base_repo
             create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], updated_comment)
