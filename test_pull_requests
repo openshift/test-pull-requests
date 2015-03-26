@@ -142,20 +142,30 @@ end
 module Hub
   class GitHubAPI
     def list_pull_requests(repo, num_tries=3)
-      (1..num_tries).each do |i|
-        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls"
-        rate_limit_remaining = res.header['X-RateLimit-Remaining']
-        $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
-        if rate_limit_remaining && rate_limit_remaining.to_i < 100
-          $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
-          exit 0
-        end
-        return res.data if res.success?
-        if i == num_tries
-          $stderr.puts res.body
-          res.error!
+      pull_requests = []
+      page = 1
+      last_pull_requests = nil
+      while (!last_pull_requests || last_pull_requests.length == 100)
+        (1..num_tries).each do |i|
+          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls?page=#{page}&per_page=100"
+          rate_limit_remaining = res.header['X-RateLimit-Remaining']
+          $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
+          if rate_limit_remaining && rate_limit_remaining.to_i < 100
+            $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
+            exit 0
+          end
+          if res.success?
+            last_pull_requests = res.data
+            pull_requests += last_pull_requests
+            page += 1
+            break
+          elsif i == num_tries
+            $stderr.puts res.body
+            res.error!
+          end
         end
       end
+      pull_requests
     end
 
     def get_pull_request(id, repo, num_tries=1)
