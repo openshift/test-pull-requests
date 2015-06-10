@@ -978,7 +978,7 @@ popd
                         test_merge_pull_request(pull_request['number'], repo, s)
                       end if repo_to_pull_request.length > 0
                       repo_to_pull_request.each do |repo, pull_request|
-                        $stderr.puts "*******Merging pretested pull request: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
+                        $stderr.puts "\n*******Merging pretested pull request: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
                         merge_pull_request(pull_request['number'], repo, s, build_url)
                       end
                     rescue Exception => e
