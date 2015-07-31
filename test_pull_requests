@@ -115,12 +115,12 @@ ACTION_NOT_MERGE            = "#{ACTION_PREFIX} Pull request cannot be automatic
 ACTION_NOT_TEAM             = "#{ACTION_PREFIX} Please contact #{Properties['irc_channel']} to have this pull request manually reviewed and tested"
 ACTION_UNSUPPORTED_BRANCH   = "#{ACTION_PREFIX} Only pull request(s) from #{$branches.pretty_inspect.chomp} are handled by the #{Properties['bot_github_user']}"
 
-def evaluated_marker(repo)
-  "Evaluated for #{Properties['repo_to_product'][repo].downcase} up to %s"
+def evaluated_marker(repo, settings)
+  "Evaluated for #{Properties['repo_to_product'][repo].downcase} #{settings['name']} up to %s"
 end
 
-def evaluated_marker_regex(repo)
-  /^Evaluated for #{Properties['repo_to_product'][repo].downcase} up to (.*)/
+def evaluated_marker_regex(repo, settings)
+  /^Evaluated for #{Properties['repo_to_product'][repo].downcase} #{settings['name']} up to (.*)/
 end
 
 def branch_settings(branch, settings)
@@ -281,6 +281,23 @@ module Hub
       end
     end
 
+    def get_last_status(context, sha, repo, num_tries=3)
+      (1..num_tries).each do |i|
+        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/commits/#{sha}/statuses?per_page=100"
+        if res.success?
+          last_status = nil
+          res.data.each do |status|
+            if status['context'] == context
+              last_status = status
+              break
+            end
+          end
+          return last_status
+        end
+        res.error! if i == num_tries
+      end
+    end
+
     # Verifies the user is part of a valid team
     def user_trusted?(login, repo, settings)
       trusted = false
@@ -412,7 +429,7 @@ module Hub
       comments = get_comments(pull_id, repo)
       bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'], comments)
       raise "Missing '#{settings['test_prefix']}' comment!" if bot_comment.nil?
-      evaluated_time = get_evaluated_time(comments, repo)
+      evaluated_time = get_evaluated_time(comments, repo, settings)
       raise "Missing evaluated flag!" if evaluated_time.nil?
       pull_request = get_pull_request(pull_id, repo, 10)
       raise "Pull request isn't open!" unless pull_request['state'] == 'open'
@@ -420,7 +437,7 @@ module Hub
       # This call isn't reliable so make sure
       mergeable = is_mergeable?(pull_id, repo, 10) unless mergeable
       raise "Pull request isn't mergeable!" unless mergeable
-      pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, comments)
+      pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, comments, settings)
       unless !pull_request_changed_after_eval
         $stderr.puts "Evaluated time: #{evaluated_time}"
         $stderr.puts "Updated at: #{pull_request_updated_at}"
@@ -614,11 +631,11 @@ popd
       end
     end
 
-    def get_evaluated_time(comments, repo)
+    def get_evaluated_time(comments, repo, settings)
       comments = sort_comments(comments)
 
       comments.each do |comment|
-        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(repo)
+        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(repo, settings)
           return Time.parse(comment['updated_at'])
         end
       end
@@ -627,7 +644,7 @@ popd
 
     def get_trusted_trigger_time(pull_request, comments, settings)
       login = pull_request['user']['login']
-      updated_at, changed_after_eval = get_updated_at(pull_request, comments)
+      updated_at, changed_after_eval = get_updated_at(pull_request, comments, settings)
       repo = pull_request['base']['repo']['name']
 
       trigger_regex = /\[#{settings['name']}\]/i
@@ -635,7 +652,7 @@ popd
       trigger_login = nil
       if pull_request['title'] =~ trigger_regex || pull_request['body'] =~ trigger_regex
         if user_trusted?(login, repo, settings)
-          evaluated_time = get_evaluated_time(comments, repo)
+          evaluated_time = get_evaluated_time(comments, repo, settings)
           trigger_time = evaluated_time || Time.parse(pull_request['updated_at'])
           trigger_login = login
         end
@@ -704,15 +721,15 @@ popd
           being_queued_comment = "#{settings['test_prefix']} Waiting: Determining build queue position"
           create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], being_queued_comment, pull_request_comments)
         end
-        pull_request_evaluated_time = get_evaluated_time(pull_request_comments, repo)
-        pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments)
+        pull_request_evaluated_time = get_evaluated_time(pull_request_comments, repo, settings)
+        pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments, settings)
         if pull_request_changed_after_eval || pull_request_evaluated_time < trigger_updated_at
           commit = get_last_commit(pull_request['number'], repo)
           # Add a new evaluated marker
-          add_comment(pull_request['number'], repo, (evaluated_marker(repo) % commit['sha']))
+          add_comment(pull_request['number'], repo, (evaluated_marker(repo, settings) % commit['sha']))
           # Delete the old evaluated markers
           pull_request_comments.each do |comment|
-            if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(repo)
+            if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(repo, settings)
               delete_comment(comment['id'], repo)
             end
           end
@@ -720,12 +737,12 @@ popd
       end
     end
 
-    def get_updated_at(pull_request, comments)
+    def get_updated_at(pull_request, comments, settings)
       updated_at = nil
       comments = sort_comments(comments)
       previous_sha = nil
       comments.each do |comment|
-        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(pull_request['base']['repo']['name'])
+        if comment['user']['login'] == Properties['bot_github_user'] && comment['body'] =~ evaluated_marker_regex(pull_request['base']['repo']['name'], settings)
           previous_sha = $1
         end
       end
@@ -792,7 +809,8 @@ popd
       $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
 
       trigger_updated_at, trigger_login = get_trusted_trigger_time(req, comments, settings)
-      evaluated_time = get_evaluated_time(comments, base_repo)
+
+      evaluated_time = get_evaluated_time(comments, base_repo, settings)
 
       $stderr.puts "Updated at: #{updated_at}"
       $stderr.puts "Changed after evaluated time: #{changed_after_eval}"
@@ -863,7 +881,7 @@ popd
                   next if repo == base_repo
                   $stderr.puts "Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
                   sub_pull_comments = get_comments(sub_pull_request['number'], repo)
-                  sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments)
+                  sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments, settings)
 
                   $stderr.puts "Updated at: #{sub_pull_request_updated_at}"
                   $stderr.puts "Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
@@ -920,7 +938,7 @@ popd
 
               $stderr.puts "Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
               sub_pull_comments = get_comments(sub_pull_request['number'], repo)
-              sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments)
+              sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments, settings)
 
               $stderr.puts "Updated at: #{sub_pull_request_updated_at}"
               $stderr.puts "Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
@@ -1061,11 +1079,11 @@ popd
             end
 
             comments = get_comments(id, repo) if comments.nil?
-            updated_at, changed_after_eval = get_updated_at(req, comments)
 
             permission_denied = Array.new(Properties['settings'].length, false)
             # Has a merge or test been requested by a trusted user?
             Properties['settings'].values.each_with_index do |settings, i|
+              updated_at, changed_after_eval = get_updated_at(req, comments, settings)
               trigger_regex = /\[#{settings['name']}\]/i
               if req['title'] =~ trigger_regex || req['body'] =~ trigger_regex
                 if user_trusted?(login, repo, settings)
