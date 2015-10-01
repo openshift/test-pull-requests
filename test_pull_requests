@@ -418,7 +418,7 @@ module Hub
             $stderr.puts `trello comment '#{comment}' --card-ref #{value}`
           end
         end
-        values = get_values_from_pull_request(pull_id, repo, /^(https?:\/\/trello\.com\/c\/[[:alnum:]]+)/, pull_request, comments)
+        values = get_values_from_pull_request(pull_id, repo, /(https?:\/\/trello\.com\/c\/[[:alnum:]]+)/, pull_request, comments)
         values.each do |value|
           comment = "A pull request referencing this card has been merged: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_id}"
           $stderr.puts `trello comment '#{comment}' --card-url '#{value}'`
