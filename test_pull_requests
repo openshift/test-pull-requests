@@ -686,7 +686,7 @@ popd
     def get_extended_tests(pull_request, comments, settings)
       extended_tests = []
       if settings['allow_multiple']
-        extended_regex = /\[extended *:( *\w+ *(, *\w+ *)*)\]/i
+        extended_regex = /\[extended *:( *[^,\[\]]+ *(, *[^,\[\]]+ *)*)\]/i
         if pull_request['title'] =~ extended_regex
           extended_tests += $1.split(',')
         end
@@ -1204,7 +1204,6 @@ popd
     def self.submit_jenkins_job(repo_to_pull_request, branch, extended_tests, settings)
       # First, get the next jenkins build number
       next_build_num = get_next_build(branch, settings)
-      build_uri = URI(Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/buildWithParameters?token=#{branch_settings(branch, settings)['build_token']}")
 
       pull_id_params = "&BRANCH=#{branch}"
       first_valid_repo = nil
@@ -1229,9 +1228,11 @@ popd
         end if addtl_jenkins_params
       end
 
+      build_uri = URI(Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/buildWithParameters?token=#{branch_settings(branch, settings)['build_token']}#{pull_id_params}")
+
       # Now submit the Jenkins job
       get_session(branch, settings).start do |http|
-        request = Net::HTTP::Get.new build_uri.request_uri + "#{pull_id_params}"
+        request = Net::HTTP::Get.new build_uri.request_uri
         response = http.request request
         if (response.kind_of? Net::HTTPFound) || (response.kind_of? Net::HTTPCreated)
           $stderr.puts "Successfully submitted job for pull request"
