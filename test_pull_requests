@@ -14,6 +14,7 @@
 # ticket.  The user setting in .test_pull_requests.json is bot_github_user
 
 require 'rubygems'
+require 'uri'
 require 'hub'
 require 'pp'
 require 'net/https'
@@ -38,6 +39,8 @@ Options:
     Takes the id of the pull request to merge and makes sure the merge will succeed before actually merging
 --mark_test_success <pull_id>
     Marks a pull request with success status for the test_settings configuration
+--mark_testonlyextended_success <pull_id>
+    Marks a pull request with success status for the testonlyextended_settings configuration
 --merge_pretest_success
     Merges all of the pretested pull requests
 --repo <repo>
@@ -52,6 +55,7 @@ opts = GetoptLong.new(
 ["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
 ["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
 ["--mark_test_success",        GetoptLong::REQUIRED_ARGUMENT],
+["--mark_testonlyextended_success",        GetoptLong::REQUIRED_ARGUMENT],
 ["--merge_pretest_success",    GetoptLong::NO_ARGUMENT],
 ["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
 ["--config",                   GetoptLong::REQUIRED_ARGUMENT]
@@ -72,6 +76,7 @@ merge_pull_id = args[:merge_pull_request]
 local_merge_pull_id = args[:local_merge_pull_request]
 test_merge_pull_id = args[:test_merge_pull_request]
 mark_test_success_pull_id = args[:mark_test_success]
+mark_testonlyextended_success_pull_id = args[:mark_testonlyextended_success]
 pull_id_repo = args[:repo]
 config = args[:config]
 merge_pretest_success = args[:merge_pretest_success]
@@ -1223,12 +1228,12 @@ popd
       if first_valid_repo
         addtl_jenkins_params = branch_settings(branch, settings)['addtl_jenkins_params']
         addtl_jenkins_params[Properties['repo_groups'][first_valid_repo]].each do |key, value|
-          value.gsub!('*', branch)
+          value.gsub!('*', branch) if value.is_a? String
           pull_id_params += "&#{key}=#{value}"
         end if addtl_jenkins_params
       end
 
-      build_uri = URI(Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/buildWithParameters?token=#{branch_settings(branch, settings)['build_token']}#{pull_id_params}")
+      build_uri = URI(URI.escape(Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/buildWithParameters?token=#{branch_settings(branch, settings)['build_token']}#{pull_id_params}"))
 
       # Now submit the Jenkins job
       get_session(branch, settings).start do |http|
@@ -1348,6 +1353,8 @@ if merge_pull_id
   @api_client.merge_pull_request(merge_pull_id, pull_id_repo, Properties['settings']['merge_test_settings'])
 elsif mark_test_success_pull_id
   @api_client.mark_test_success(mark_test_success_pull_id, pull_id_repo, Properties['settings']['test_settings'])
+elsif mark_testonlyextended_success_pull_id
+  @api_client.mark_test_success(mark_testonlyextended_success_pull_id, pull_id_repo, Properties['settings']['testonlyextended_settings'])
 elsif local_merge_pull_id
   @api_client.local_merge_pull_request(local_merge_pull_id, pull_id_repo)
 elsif test_merge_pull_id
