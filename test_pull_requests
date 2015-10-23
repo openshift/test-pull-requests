@@ -119,6 +119,7 @@ ACTION_PREFIX               = Properties['action_required_prefix']
 ACTION_NOT_MERGE            = "#{ACTION_PREFIX} Pull request cannot be automatically merged, please rebase your branch from latest HEAD and push again"
 ACTION_NOT_TEAM             = "#{ACTION_PREFIX} Please contact #{Properties['irc_channel']} to have this pull request manually reviewed and tested"
 ACTION_UNSUPPORTED_BRANCH   = "#{ACTION_PREFIX} Only pull request(s) from #{$branches.pretty_inspect.chomp} are handled by the #{Properties['bot_github_user']}"
+NEEDS_REBASE_LABEL          = "needs-rebase"
 
 def evaluated_marker(repo, settings)
   "Evaluated for #{Properties['repo_to_product'][repo].downcase} #{settings['name']} up to %s"
@@ -274,6 +275,61 @@ module Hub
         return res.data if res.success?
         res.error! if i == num_tries
       end
+    end
+
+    def ensure_labels(issue_id, repo, labels, num_tries=3)
+      existing_labels = get_labels(issue_id, repo, num_tries)
+      existing_labels = existing_labels.map{|label| label['name']}
+      missing_labels = labels - existing_labels
+      if missing_labels.length > 0
+        add_labels(issue_id, repo, missing_labels, num_tries)
+      end
+    end
+
+    def add_labels(issue_id, repo, labels, num_tries=3)
+      $stderr.puts "Adding labels: #{labels.join(',')}"
+      (1..num_tries).each do |i|
+        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels" % [issue_id], labels
+        return res.data if res.success?
+        res.error! if i == num_tries
+      end
+    end
+
+    def remove_labels(issue_id, repo, labels, num_tries=3)
+      existing_labels = get_labels(issue_id, repo, num_tries)
+      existing_labels = existing_labels.map{|label| label['name']}
+      labels = labels & existing_labels
+      labels.each do |label|
+        remove_label(issue_id, repo, label, num_tries)
+      end
+    end
+
+    def remove_label(issue_id, repo, label, num_tries=3)
+      $stderr.puts "Removing label #{label}"
+      (1..num_tries).each do |i|
+        res = delete "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels/%s" % [issue_id, label]
+        break if res.success?
+        res.error! if i == num_tries
+      end
+    end
+
+    def get_labels(issue_id, repo, num_tries=3)
+      page = 1
+      labels = []
+      last_labels = nil
+      while (!last_labels || last_labels.length == 100)
+        (1..num_tries).each do |i|
+          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels?page=#{page}&per_page=100" % issue_id
+          if res.success?
+            last_labels = res.data
+            labels += last_labels
+            page += 1
+            break
+          end
+          res.error! if i == num_tries
+        end
+      end
+      labels
     end
 
     def update_status(context, sha, repo, state, url, desc, num_tries=3)
@@ -575,6 +631,7 @@ popd
         comments.delete_if { |c| c['id'] == comment['id'] }
       end
       delete_comment(comment['id'], repo) if comment
+      return comment
     end
 
     #
@@ -1034,7 +1091,9 @@ popd
       if count <= 0
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable`
         comments = get_comments(id, repo) if comments.nil?
-        delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments)
+        if delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments) || (rand(100) < 5)
+          remove_labels(id, repo, [NEEDS_REBASE_LABEL])
+        end
       else
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count-1).to_s}" >> ~/test_pull_request_not_mergable`
       end
@@ -1047,8 +1106,9 @@ popd
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count >= 20 # ~1 hours
+      if count >= 5
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
+        ensure_labels(id, repo, [NEEDS_REBASE_LABEL])
       else
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergable`
       end
