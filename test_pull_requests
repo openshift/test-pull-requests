@@ -50,15 +50,15 @@ USAGE
 end
 
 opts = GetoptLong.new(
-["--help",               "-h", GetoptLong::NO_ARGUMENT],
-["--merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
-["--local_merge_pull_request", GetoptLong::REQUIRED_ARGUMENT],
-["--test_merge_pull_request",  GetoptLong::REQUIRED_ARGUMENT],
-["--mark_test_success",        GetoptLong::REQUIRED_ARGUMENT],
-["--mark_testonlyextended_success",        GetoptLong::REQUIRED_ARGUMENT],
-["--merge_pretest_success",    GetoptLong::NO_ARGUMENT],
-["--repo",                     GetoptLong::REQUIRED_ARGUMENT],
-["--config",                   GetoptLong::REQUIRED_ARGUMENT]
+["--help",               "-h",      GetoptLong::NO_ARGUMENT],
+["--merge_pull_request",            GetoptLong::REQUIRED_ARGUMENT],
+["--local_merge_pull_request",      GetoptLong::REQUIRED_ARGUMENT],
+["--test_merge_pull_request",       GetoptLong::REQUIRED_ARGUMENT],
+["--mark_test_success",             GetoptLong::REQUIRED_ARGUMENT],
+["--mark_testonlyextended_success", GetoptLong::REQUIRED_ARGUMENT],
+["--merge_pretest_success",         GetoptLong::NO_ARGUMENT],
+["--repo",                          GetoptLong::REQUIRED_ARGUMENT],
+["--config",                        GetoptLong::REQUIRED_ARGUMENT]
 )
 
 args = {}
@@ -396,6 +396,7 @@ module Hub
       build_url = JenkinsAPI.submit_jenkins_job(repo_to_pull_request, branch, extended_tests, settings)
 
       running_comment = "#{settings['test_prefix']} Running (#{build_url})"
+      running_comment += " (Extended Tests: #{extended_tests.join(', ')})" unless extended_tests.empty?
 
       # Update the comments to reflect the new tests running
       update_comment(comment_id, base_repo, running_comment)
@@ -417,12 +418,15 @@ module Hub
       $stderr.puts "Marking SUCCESS for pull request ##{pull_id} in repo '#{repo}'"
       bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'])
       build_url = nil
-      if bot_comment['body'] =~ /^#{settings['test_prefix']} Running \((.*)\)/
+      extended_tests = nil
+      if bot_comment['body'] =~ /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\))?/
         build_url = $1
+        extended_tests = $2
       else
         raise "'#{settings['name']}' pull request not found"
       end
       comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
+      comment += extended_tests if extended_tests
       update_comment(bot_comment['id'], repo, comment)
 
       commit = get_last_commit(pull_id, repo)
@@ -962,13 +966,14 @@ popd
               $stderr.puts "Job is already queued"
             end
           end
-        when /^#{settings['test_prefix']} Running \((.*)\)/
+        when /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\))?/
           # This state means that the tests are already running
           # In this case we need to poll Jenkins to see if the build
           # is finished
 
           # Capture the build_url from the regex match
           build_url = $1
+          extended_tests = $2
           $stderr.puts "Running: #{build_url}consoleFull"
 
           # If the build is finished, update with the results
@@ -978,11 +983,12 @@ popd
           else
             result = JenkinsAPI.get_build_result(build_url, branch, settings)
             updated_comment = "#{settings['test_prefix']} #{result} (#{build_url})"
+            updated_comment += extended_tests if extended_tests
             status = result == 'SUCCESS' ? 'success' : 'failure'
           end
         else
           $stderr.puts "Finished..."
-          $stderr.puts comment if comment =~ /^#{settings['test_prefix']} .+ \((.*)\)/
+          $stderr.puts comment if comment =~ /^#{settings['test_prefix']} .+ \([^\)]+\)/
           resubmit_test_job = true
         end
         if resubmit_test_job
@@ -1054,7 +1060,7 @@ popd
           Properties['settings'].each_value do |s|
             if s['pretest_settings_key'] && merge_pretest_success
               if Properties['settings'][s['pretest_settings_key']]['name'] == settings['name']
-                if comment =~ /^#{settings['test_prefix']} SUCCESS \((.*)\)/
+                if comment =~ /^#{settings['test_prefix']} SUCCESS \(([^\)]+)\)/
                   build_url = $1
                   trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, s)
                   if trusted_trigger_time
