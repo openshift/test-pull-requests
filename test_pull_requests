@@ -277,6 +277,12 @@ module Hub
       end
     end
 
+    def recreate_comment(issue_id, comment_id, repo, comment)
+      $stderr.puts "Recreating comment ##{comment_id} with #{comment}"
+      delete_comment(comment_id, repo)
+      add_comment(issue_id, repo, comment)
+    end
+
     def ensure_labels(issue_id, repo, labels, num_tries=3)
       existing_labels = get_labels(issue_id, repo, num_tries)
       existing_labels = existing_labels.map{|label| label['name']}
@@ -427,7 +433,7 @@ module Hub
       end
       comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
       comment += extended_tests if extended_tests
-      update_comment(bot_comment['id'], repo, comment)
+      recreate_comment(pull_id, bot_comment['id'], repo, comment)
 
       commit = get_last_commit(pull_id, repo)
       update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Tested")
@@ -655,6 +661,15 @@ popd
       end
 
       prefix_comment
+    end
+
+    #
+    # Gets a comment with given prefix
+    #
+    def recreate_comment_with_prefix(issue_id, repo, comment_prefix, comment, comments=nil)
+      comments = get_comments(issue_id, repo) if comments.nil?
+      delete_comment_with_prefix(issue_id, repo, comment_prefix, comments)
+      create_or_update_comment(issue_id, repo, comment_prefix, comment, comments)
     end
 
     def get_comment_with_value(issue_id, repo, value, comments=nil)
@@ -1047,14 +1062,14 @@ popd
           extended_tests = get_extended_tests(req, comments, settings)
           submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
         elsif updated_comment
-          update_comment(comment_id, base_repo, updated_comment)
+          recreate_comment(id, comment_id, base_repo, updated_comment)
           repo_to_pull_request.each do |repo, pull_request|
             if status && build_url
               commit = get_last_commit(pull_request['number'], repo)
               update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, "Tested")
             end
             next if repo == base_repo
-            create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], updated_comment)
+            recreate_comment_with_prefix(pull_request['number'], repo, settings['test_prefix'], updated_comment)
           end
         else
           Properties['settings'].each_value do |s|
