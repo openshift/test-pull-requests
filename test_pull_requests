@@ -1147,7 +1147,7 @@ popd
         $stderr.puts "Processing repo '#{repo}'"
         list_pull_requests(repo).each do |req|
           id = req['number']
-          $stderr.puts "Analyzing pull request ##{id}"
+          $stderr.puts "Analyzing pull request https://github.com/#{Properties['github_user']}/#{repo}/pull/#{id}"
 
           branch = req['base']['ref']
 
