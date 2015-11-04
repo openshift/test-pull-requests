@@ -250,7 +250,7 @@ module Hub
     end
 
     def delete_comment(comment_id, repo, num_tries=3)
-      $stderr.puts "Deleting comment ##{comment_id}"
+      $stderr.puts "  Deleting comment ##{comment_id}"
       (1..num_tries).each do |i|
         res = delete "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id]
         break if res.success?
@@ -268,7 +268,7 @@ module Hub
     end
 
     def update_comment(comment_id, repo, comment, num_tries=3)
-      $stderr.puts "Updating comment ##{comment_id} with #{comment}"
+      $stderr.puts "  Updating comment ##{comment_id} with #{comment}"
       params = { :body => comment }
       (1..num_tries).each do |i|
         res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id], params
@@ -278,7 +278,7 @@ module Hub
     end
 
     def recreate_comment(issue_id, comment_id, repo, comment)
-      $stderr.puts "Recreating comment ##{comment_id} with #{comment}"
+      $stderr.puts "  Recreating comment ##{comment_id} with #{comment}"
       delete_comment(comment_id, repo)
       add_comment(issue_id, repo, comment)
     end
@@ -293,7 +293,7 @@ module Hub
     end
 
     def add_labels(issue_id, repo, labels, num_tries=3)
-      $stderr.puts "Adding labels: #{labels.join(',')}"
+      $stderr.puts "  Adding labels: #{labels.join(',')}"
       (1..num_tries).each do |i|
         res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels" % [issue_id], labels
         return res.data if res.success?
@@ -311,7 +311,7 @@ module Hub
     end
 
     def remove_label(issue_id, repo, label, num_tries=3)
-      $stderr.puts "Removing label #{label}"
+      $stderr.puts "  Removing label #{label}"
       (1..num_tries).each do |i|
         res = delete "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels/%s" % [issue_id, label]
         break if res.success?
@@ -339,7 +339,7 @@ module Hub
     end
 
     def update_status(context, sha, repo, state, url, desc, num_tries=3)
-      $stderr.puts "Updating status of '#{sha}' with state '#{state}'"
+      $stderr.puts "  Updating status of '#{sha}' with state '#{state}'"
       params = { :state => state, :target_url => url, :description => desc, :context => context}
       (1..num_tries).each do |i|
         res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
@@ -393,7 +393,7 @@ module Hub
       unless settings['allow_multiple']
         if submitted_tests[settings['name']] || JenkinsAPI.is_previous_build_running?(branch, settings)
           submitted_tests[settings['name']] = true
-          $stderr.puts "Waiting for existing build to finish"
+          $stderr.puts "  Waiting for existing build to finish"
           return
         end
       end
@@ -421,7 +421,7 @@ module Hub
     end
 
     def mark_test_success(pull_id, repo, settings)
-      $stderr.puts "Marking SUCCESS for pull request ##{pull_id} in repo '#{repo}'"
+      $stderr.puts "  Marking SUCCESS for pull request ##{pull_id} in repo '#{repo}'"
       bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'])
       build_url = nil
       extended_tests = nil
@@ -440,7 +440,7 @@ module Hub
     end
 
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
-      $stderr.puts "Merging pull request ##{pull_id} for repo '#{repo}'"
+      $stderr.puts "  Merging pull request ##{pull_id} for repo '#{repo}'"
       pull_request, bot_comment, comments = test_merge_pull_request(pull_id, repo, settings)
       build_url = nil
       if merge_pretest_success_url
@@ -608,7 +608,7 @@ popd
         bot_comment = get_comment_with_prefix(issue_id, repo, settings['test_prefix'])
         unless bot_comment
           # No comment found, create a new one and yield to it
-          $stderr.puts "Creating placeholder comment"
+          $stderr.puts "  Creating placeholder comment"
           evaluating_comment = "#{settings['test_prefix']} Evaluating for testing"
           bot_comment = add_comment(issue_id, repo, evaluating_comment)
         end
@@ -851,7 +851,7 @@ popd
     end
 
     def add_coreq(addtl_pull_id, addtl_pull_repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at, base_pull_id, base_repo, comments)
-      $stderr.puts "Processing dependency on pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}'"
+      $stderr.puts "  Processing dependency on pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}'"
       trusted = user_trusted?(login, addtl_pull_repo, settings)
       # It's ok if the user is trusted or the trigger was added after the comment
       if trusted || (user_trusted?(trigger_login, addtl_pull_repo, settings) && (trigger_updated_at && trigger_updated_at >= updated_at))
@@ -863,18 +863,18 @@ popd
           else
             if set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login']) > 4
               comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' is not mergeable"
-              $stderr.puts comment
+              $stderr.puts "  #{comment}"
               add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
             end
           end
         else
           comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' not found"
-          $stderr.puts comment
+          $stderr.puts "  #{comment}"
           add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
         end
       else
         comment = "User '#{login}' is not permitted to #{settings['name']} linked pull request #{addtl_pull_id} in '#{addtl_pull_repo}'.  If the #{settings['name']} was requested by another user with permission to #{settings['name']} in '#{addtl_pull_repo}', the linked pull request must be in a comment before the #{settings['name']} comment (not including the pull request description) or be added by a user with permission to #{settings['name']} in '#{addtl_pull_repo}'."
-        $stderr.puts comment
+        $stderr.puts "  #{comment}"
         add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
       end
     end
@@ -898,10 +898,10 @@ popd
 
       evaluated_time = get_evaluated_time(comments, base_repo, settings)
 
-      $stderr.puts "Updated at: #{updated_at}"
-      $stderr.puts "Changed after evaluated time: #{changed_after_eval}"
-      $stderr.puts "Trigger updated at: #{trigger_updated_at}"
-      $stderr.puts "Evaluated time: #{evaluated_time}"
+      $stderr.puts "  Updated at: #{updated_at}"
+      $stderr.puts "  Changed after evaluated time: #{changed_after_eval}"
+      $stderr.puts "  Trigger updated at: #{trigger_updated_at}"
+      $stderr.puts "  Evaluated time: #{evaluated_time}"
 
       # Gather any dependencies from trusted users
       $repo_to_pull_regex.each do |repo, regex|
@@ -931,7 +931,7 @@ popd
         resubmit_test_job = false
         case comment
         when /^#{settings['test_prefix']} Evaluating/
-          $stderr.puts "Evaluating..."
+          $stderr.puts "  Evaluating..."
           # This is the state for a completely new comment
 
           if JenkinsAPI.is_project_stable?(branch, settings)
@@ -953,24 +953,24 @@ popd
             updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
           end
         when /^#{settings['test_prefix']} Waiting/
-          $stderr.puts "Waiting..."
+          $stderr.puts "  Waiting..."
           # Only submit the tests if the project is stable
           if JenkinsAPI.is_project_stable?(branch, settings)
             submitted_tests = submitted_tests_for_branch(branch)
             if !(submitted_tests[settings['name']] && comment =~ /^#{settings['test_prefix']} Waiting: You are in the build queue at position: \d+/)
-              $stderr.puts "Checking that evaluated times are still up to date"
+              $stderr.puts "  Checking that evaluated times are still up to date"
               if changed_after_eval
                 resubmit_test_job = true
               else
                 submit_test_job = true
                 repo_to_pull_request.each do |repo, sub_pull_request|
                   next if repo == base_repo
-                  $stderr.puts "Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
+                  $stderr.puts "  Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
                   sub_pull_comments = get_comments(sub_pull_request['number'], repo)
                   sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments, settings)
 
-                  $stderr.puts "Updated at: #{sub_pull_request_updated_at}"
-                  $stderr.puts "Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
+                  $stderr.puts "  Updated at: #{sub_pull_request_updated_at}"
+                  $stderr.puts "  Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
                   if sub_pull_request_changed_after_eval
                     resubmit_test_job = true
                     break
@@ -978,7 +978,7 @@ popd
                 end
               end
             else
-              $stderr.puts "Job is already queued"
+              $stderr.puts "  Job is already queued"
             end
           end
         when /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\))?/
@@ -989,7 +989,7 @@ popd
           # Capture the build_url from the regex match
           build_url = $1
           extended_tests = $2
-          $stderr.puts "Running: #{build_url}consoleFull"
+          $stderr.puts "  Running: #{build_url}consoleFull"
 
           # If the build is finished, update with the results
           if JenkinsAPI.is_build_running?(build_url, branch, settings)
@@ -1002,14 +1002,14 @@ popd
             status = result == 'SUCCESS' ? 'success' : 'failure'
           end
         else
-          $stderr.puts "Finished..."
-          $stderr.puts comment if comment =~ /^#{settings['test_prefix']} .+ \([^\)]+\)/
+          $stderr.puts "  Finished..."
+          $stderr.puts "  #{comment}" if comment =~ /^#{settings['test_prefix']} .+ \([^\)]+\)/
           resubmit_test_job = true
         end
         if resubmit_test_job
           submit_test_job = false
 
-          $stderr.puts "Checking whether we should resubmit"
+          $stderr.puts "  Checking whether we should resubmit"
           if trigger_updated_at
             # We already trust the primary pull request.  Just need to check whether the eval time is older than last update or last trusted trigger.
             if changed_after_eval || (evaluated_time < trigger_updated_at)
@@ -1024,17 +1024,17 @@ popd
             repo_to_pull_request.each do |repo, sub_pull_request|
               next if repo == base_repo
 
-              $stderr.puts "Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
+              $stderr.puts "  Checking evaluated time for sub pull request #{sub_pull_request['number']} for repo '#{repo}'"
               sub_pull_comments = get_comments(sub_pull_request['number'], repo)
               sub_pull_request_updated_at, sub_pull_request_changed_after_eval = get_updated_at(sub_pull_request, sub_pull_comments, settings)
 
-              $stderr.puts "Updated at: #{sub_pull_request_updated_at}"
-              $stderr.puts "Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
+              $stderr.puts "  Updated at: #{sub_pull_request_updated_at}"
+              $stderr.puts "  Changed after evaluated time: #{sub_pull_request_changed_after_eval}"
 
               # Make sure the trigger on the primary pull request is after the updated date of the sub pull request
               # or the user of the sub pull request is trusted
               valid_trigger_comment = trigger_updated_at > sub_pull_request_updated_at
-              $stderr.puts "Has valid trigger comment: #{valid_trigger_comment}"
+              $stderr.puts "  Has valid trigger comment: #{valid_trigger_comment}"
               if valid_trigger_comment || user_trusted?(sub_pull_request['user']['login'], repo, settings)
                 if sub_pull_request_changed_after_eval
                   if JenkinsAPI.is_project_stable?(branch, settings)
@@ -1105,25 +1105,25 @@ popd
     def set_mergeable(id, repo, login, comments=nil)
       merge_id="#{repo}_#{id}_#{login}"
       count = 0
-      previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergable`.chomp
+      previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergeable`.chomp
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
       if count <= 0
-        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable`
+        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable`
         comments = get_comments(id, repo) if comments.nil?
         if delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments) || (rand(10) <= 1)
           remove_labels(id, repo, [NEEDS_REBASE_LABEL])
         end
       else
-        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count-1).to_s}" >> ~/test_pull_request_not_mergable`
+        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable && echo "#{merge_id}=#{(count-1).to_s}" >> ~/test_pull_request_not_mergeable`
       end
     end
 
     def set_not_mergeable(id, repo, login)
       merge_id="#{repo}_#{id}_#{login}"
       count = 0
-      previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergable`.chomp
+      previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergeable`.chomp
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
@@ -1131,7 +1131,7 @@ popd
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
         ensure_labels(id, repo, [NEEDS_REBASE_LABEL])
       else
-        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergable`
+        `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergeable`
       end
       count #return count of how many times this has happened (used as stability measure, Github becomes unstable for mergeability right after a merge happens)
     end
@@ -1153,57 +1153,60 @@ popd
 
           if $branches.include?(branch) || $branches.include?('*')
 
-            login = req['user']['login']
-
-            comments = nil
-            # Skip if it's not mergeable
-            mergeable = is_mergeable?(id, repo)
-            $stderr.puts "Mergeable #{mergeable}"
-            if mergeable
-              comments = get_comments(id, repo) if comments.nil?
-              set_mergeable(id, repo, login, comments)
-            else
-              if set_not_mergeable(id, repo, login) == 0
-                mergeability_in_flux = true
-              end
-              next
-            end
-
-            comments = get_comments(id, repo) if comments.nil?
-
-            permission_denied = Array.new(Properties['settings'].length, false)
-            # Has a merge or test been requested by a trusted user?
-            Properties['settings'].values.each_with_index do |settings, i|
-              updated_at, changed_after_eval = get_updated_at(req, comments, settings)
-              trigger_regex = /\[#{settings['name']}\]/i
-              if req['title'] =~ trigger_regex || req['body'] =~ trigger_regex
-                if user_trusted?(login, repo, settings)
-                  pull_requests << [req, updated_at, changed_after_eval, comments, settings]
-                  permission_denied[i] = false
-                  next
-                else
-                  $stderr.puts "User '#{login}' not trusted"
-                  permission_denied[i] = true
+            if Time.now - Time.parse(req['updated_at']) < (3*24*60*60) || (rand(10) <= 1)
+              login = req['user']['login']
+              comments = nil
+              # Skip if it's not mergeable
+              mergeable = is_mergeable?(id, repo)
+              $stderr.puts "  Mergeable: #{mergeable}"
+              if mergeable
+                comments = get_comments(id, repo) if comments.nil?
+                set_mergeable(id, repo, login, comments)
+              else
+                if set_not_mergeable(id, repo, login) == 0
+                  mergeability_in_flux = true
                 end
+                next
               end
 
-              comments = sort_comments(comments)
-              comments.each do |comment|
-                if comment['body'] =~ trigger_regex
-                  comment_login = comment['user']['login']
-                  if user_trusted?(comment_login, repo, settings)
+              comments = get_comments(id, repo) if comments.nil?
+
+              permission_denied = Array.new(Properties['settings'].length, false)
+              # Has a merge or test been requested by a trusted user?
+              Properties['settings'].values.each_with_index do |settings, i|
+                updated_at, changed_after_eval = get_updated_at(req, comments, settings)
+                trigger_regex = /\[#{settings['name']}\]/i
+                if req['title'] =~ trigger_regex || req['body'] =~ trigger_regex
+                  if user_trusted?(login, repo, settings)
                     pull_requests << [req, updated_at, changed_after_eval, comments, settings]
                     permission_denied[i] = false
-                    break
+                    next
                   else
-                    $stderr.puts "User '#{comment_login}' not trusted"
+                    $stderr.puts "  User '#{login}' not trusted"
                     permission_denied[i] = true
                   end
                 end
+
+                comments = sort_comments(comments)
+                comments.each do |comment|
+                  if comment['body'] =~ trigger_regex
+                    comment_login = comment['user']['login']
+                    if user_trusted?(comment_login, repo, settings)
+                      pull_requests << [req, updated_at, changed_after_eval, comments, settings]
+                      permission_denied[i] = false
+                      break
+                    else
+                      $stderr.puts "  User '#{comment_login}' not trusted"
+                      permission_denied[i] = true
+                    end
+                  end
+                end
               end
-            end
-            if permission_denied.include? true
-              create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
+              if permission_denied.include? true
+                create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
+              end
+            else
+              $stderr.puts "  Skipping due to age and inactivity"
             end
           else
             create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_UNSUPPORTED_BRANCH)
@@ -1247,7 +1250,7 @@ popd
             skipped_count_branch[settings['name']] += 1
             queued_comment = "#{settings['test_prefix']} Waiting: You are in the build queue at position: #{skipped_count_branch[settings['name']].to_s}"
             create_or_update_comment(req['number'], req['base']['repo']['name'], settings['test_prefix'], queued_comment , comments)
-            $stderr.puts "Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count_branch[settings['name']]}"
+            $stderr.puts "  Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count_branch[settings['name']]}"
             # Get ahead of the game and pretest requests
             if settings['pretest_settings_key'] && settings['pretest_comment'] && settings['pretest_queue_threshold'] && (skipped_count_branch[settings['name']] >= settings['pretest_queue_threshold'])
               trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, Properties['settings'][settings['pretest_settings_key']])
@@ -1321,10 +1324,10 @@ popd
         request = Net::HTTP::Get.new build_uri.request_uri
         response = http.request request
         if (response.kind_of? Net::HTTPFound) || (response.kind_of? Net::HTTPCreated)
-          $stderr.puts "Successfully submitted job for pull request"
+          $stderr.puts "  Successfully submitted job for pull request"
 
           # Block until Jenkins actually increments the build number (this isn't transactional)
-          $stderr.puts "Now waiting until build number increments..."
+          $stderr.puts "  Now waiting until build number increments..."
           while get_next_build(branch, settings) == next_build_num
             sleep 1
           end
@@ -1395,6 +1398,8 @@ popd
         response = http.request request
         if response.kind_of? Net::HTTPSuccess
           return JSON.parse(response.body)["building"]
+        elsif response.kind_of? Net::HTTPNotFound
+          return false
         else
           raise "Jenkins connection error"
         end
@@ -1408,6 +1413,8 @@ popd
         if response.kind_of? Net::HTTPSuccess
           job = JSON.parse(response.body)
           return job["result"]
+        elsif response.kind_of? Net::HTTPNotFound
+          return "NOTFOUND"
         else
           raise "Jenkins connection error"
         end
@@ -1444,5 +1451,5 @@ else
   # Process all the pull requests for testing
   $stderr.puts "Processing pull requests..."
   @api_client.process_pull_requests(merge_pretest_success)
-  $stderr.puts "Done\n"
+  $stderr.puts "\nDone\n"
 end
