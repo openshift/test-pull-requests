@@ -121,6 +121,9 @@ ACTION_NOT_TEAM             = "#{ACTION_PREFIX} Please contact #{Properties['irc
 ACTION_UNSUPPORTED_BRANCH   = "#{ACTION_PREFIX} Only pull request(s) from #{$branches.pretty_inspect.chomp} are handled by the #{Properties['bot_github_user']}"
 NEEDS_REBASE_LABEL          = "needs-rebase"
 
+GITHUB_API_BASE_URL = 'https://api.github.com'
+GITHUB_BASE_URL = 'https://github.com'
+
 def evaluated_marker(repo, settings)
   "Evaluated for #{Properties['repo_to_product'][repo].downcase} #{settings['name']} up to %s"
 end
@@ -153,7 +156,7 @@ module Hub
       last_pull_requests = nil
       while (!last_pull_requests || last_pull_requests.length == 100)
         (1..num_tries).each do |i|
-          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls?page=#{page}&per_page=100"
+          res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/pulls?page=#{page}&per_page=100"
           rate_limit_remaining = res.header['X-RateLimit-Remaining']
           $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
           if rate_limit_remaining && rate_limit_remaining.to_i < 500
@@ -176,7 +179,7 @@ module Hub
 
     def get_pull_request(id, repo, num_tries=1)
       (1..num_tries).each do |i|
-        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s" % id
+        res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/pulls/%s" % id
         if res.success?
           return res.data
         elsif i == num_tries
@@ -217,7 +220,7 @@ module Hub
       end
       unless commits
         (1..num_tries).each do |i|
-          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/%s/commits?per_page=100" % id
+          res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/pulls/%s/commits?per_page=100" % id
           if res.success?
             commits = res.data
             $commits[repo][id] = commits
@@ -236,7 +239,7 @@ module Hub
       last_comments = nil
       while (!last_comments || last_comments.length == 100)
         (1..num_tries).each do |i|
-          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments?page=#{page}&per_page=100" % issue_id
+          res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments?page=#{page}&per_page=100" % issue_id
           if res.success?
             last_comments = res.data
             comments += last_comments
@@ -252,7 +255,7 @@ module Hub
     def delete_comment(comment_id, repo, num_tries=3)
       $stderr.puts "  Deleting comment ##{comment_id}"
       (1..num_tries).each do |i|
-        res = delete "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id]
+        res = delete "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id]
         break if res.success?
         res.error! if i == num_tries
       end
@@ -261,7 +264,7 @@ module Hub
     def add_comment(issue_id, repo, comment, num_tries=3)
       params = { :body => comment }
       (1..num_tries).each do |i|
-        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments" % [issue_id], params
+        res = post "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/%s/comments" % [issue_id], params
         return res.data if res.success?
         res.error! if i == num_tries
       end
@@ -271,7 +274,7 @@ module Hub
       $stderr.puts "  Updating comment ##{comment_id} with #{comment}"
       params = { :body => comment }
       (1..num_tries).each do |i|
-        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id], params
+        res = post "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id], params
         return res.data if res.success?
         res.error! if i == num_tries
       end
@@ -295,7 +298,7 @@ module Hub
     def add_labels(issue_id, repo, labels, num_tries=3)
       $stderr.puts "  Adding labels: #{labels.join(',')}"
       (1..num_tries).each do |i|
-        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels" % [issue_id], labels
+        res = post "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels" % [issue_id], labels
         return res.data if res.success?
         res.error! if i == num_tries
       end
@@ -313,7 +316,7 @@ module Hub
     def remove_label(issue_id, repo, label, num_tries=3)
       $stderr.puts "  Removing label #{label}"
       (1..num_tries).each do |i|
-        res = delete "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels/%s" % [issue_id, label]
+        res = delete "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels/%s" % [issue_id, label]
         break if res.success?
         res.error! if i == num_tries
       end
@@ -325,7 +328,7 @@ module Hub
       last_labels = nil
       while (!last_labels || last_labels.length == 100)
         (1..num_tries).each do |i|
-          res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels?page=#{page}&per_page=100" % issue_id
+          res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/%s/labels?page=#{page}&per_page=100" % issue_id
           if res.success?
             last_labels = res.data
             labels += last_labels
@@ -339,10 +342,10 @@ module Hub
     end
 
     def update_status(context, sha, repo, state, url, desc, num_tries=3)
-      $stderr.puts "  Updating status of '#{sha}' with state '#{state}'"
+      $stderr.puts "  Updating status of '#{sha}' with state: #{state}"
       params = { :state => state, :target_url => url, :description => desc, :context => context}
       (1..num_tries).each do |i|
-        res = post "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
+        res = post "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/statuses/%s" % [sha], params
         return res.data if res.success?
         #res.error! if i == num_tries
       end
@@ -350,7 +353,7 @@ module Hub
 
     def get_last_status(context, sha, repo, num_tries=3)
       (1..num_tries).each do |i|
-        res = get "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/commits/#{sha}/statuses?per_page=100"
+        res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/commits/#{sha}/statuses?per_page=100"
         if res.success?
           last_status = nil
           res.data.each do |status|
@@ -378,7 +381,7 @@ module Hub
       end
       if $permissions[login][repo_setting_key].nil?
         settings['repo_to_teams'][repo].each do |team|
-          res = get "https://api.github.com/teams/#{team}/members/#{login}"
+          res = get "#{GITHUB_API_BASE_URL}/teams/#{team}/members/#{login}"
           trusted = res.success?
           break if trusted
         end
@@ -470,7 +473,7 @@ module Hub
       res = nil
       num_tries = 5
       (1..num_tries).each do |i|
-        res = put "https://api.github.com/repos/#{Properties['github_user']}/#{repo}/pulls/#{pull_id}/merge", params
+        res = put "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/pulls/#{pull_id}/merge", params
         break if res.success?
         if i < num_tries
           sleep sleep_time
@@ -485,13 +488,13 @@ module Hub
         settings['trello_card_refs'].each do |ref|
           values = get_values_from_pull_request(pull_id, repo, /(#{ref}_\d+)/i, pull_request, comments)
           values.each do |value|
-            comment = "A pull request referencing this card has been merged: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_id}"
+            comment = "A pull request referencing this card has been merged: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{repo}/pull/#{pull_id}"
             $stderr.puts `trello comment '#{comment}' --card-ref #{value}`
           end
         end
         values = get_values_from_pull_request(pull_id, repo, /(https?:\/\/trello\.com\/c\/[[:alnum:]]+)/, pull_request, comments)
         values.each do |value|
-          comment = "A pull request referencing this card has been merged: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_id}"
+          comment = "A pull request referencing this card has been merged: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{repo}/pull/#{pull_id}"
           $stderr.puts `trello comment '#{comment}' --card-url '#{value}'`
         end
       end
@@ -892,7 +895,7 @@ popd
       login = req['user']['login']
       repo_to_pull_request = {base_repo => req}
 
-      $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: https://github.com/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
+      $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
 
       trigger_updated_at, trigger_login = get_trusted_trigger_time(req, comments, settings)
 
@@ -1084,7 +1087,7 @@ popd
                         test_merge_pull_request(pull_request['number'], repo, s)
                       end if repo_to_pull_request.length > 0
                       repo_to_pull_request.each do |repo, pull_request|
-                        $stderr.puts "\n*******Merging pretested pull request: https://github.com/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
+                        $stderr.puts "\n*******Merging pretested pull request: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
                         merge_pull_request(pull_request['number'], repo, s, build_url)
                       end
                     rescue Exception => e
@@ -1144,10 +1147,10 @@ popd
       pull_requests = []
       mergeability_in_flux = false
       $repo_to_pull_regex.keys.each do |repo|
-        $stderr.puts "Processing repo '#{repo}'"
+        $stderr.puts "\nProcessing repo '#{repo}'"
         list_pull_requests(repo).each do |req|
           id = req['number']
-          $stderr.puts "Analyzing pull request https://github.com/#{Properties['github_user']}/#{repo}/pull/#{id}"
+          $stderr.puts "Analyzing pull request: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{repo}/pull/#{id}"
 
           branch = req['base']['ref']
 
