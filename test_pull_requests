@@ -475,7 +475,7 @@ module Hub
         if i < num_tries
           sleep sleep_time
           sleep_time *= 2
-          $stderr.puts "Retrying...  attempt: #{i+1}"
+          $stderr.puts "  Retrying...  attempt: #{i+1}"
         end
       end
 
@@ -501,7 +501,7 @@ module Hub
     end
 
     def test_merge_pull_request(pull_id, repo, settings)
-      $stderr.puts "Test merging pull request ##{pull_id} for repo '#{repo}'"
+      $stderr.puts "  Test merging pull request ##{pull_id} for repo '#{repo}'"
       comments = get_comments(pull_id, repo)
       bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'], comments)
       raise "Missing '#{settings['test_prefix']}' comment!" if bot_comment.nil?
@@ -515,8 +515,8 @@ module Hub
       raise "Pull request isn't mergeable!" unless mergeable
       pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, comments, settings)
       unless !pull_request_changed_after_eval
-        $stderr.puts "Evaluated time: #{evaluated_time}"
-        $stderr.puts "Updated at: #{pull_request_updated_at}"
+        $stderr.puts "  Evaluated time: #{evaluated_time}"
+        $stderr.puts "  Updated at: #{pull_request_updated_at}"
         raise "Pull request was updated after testing started!"
       end
       return pull_request, bot_comment, comments
@@ -1153,7 +1153,8 @@ popd
 
           if $branches.include?(branch) || $branches.include?('*')
 
-            if Time.now - Time.parse(req['updated_at']) < (3*24*60*60) || (rand(10) <= 1)
+            $stderr.puts "  Updated at: #{Time.parse(req['updated_at'])}"
+            if Time.now - Time.parse(req['updated_at']) < (24*60*60) || (rand(20) <= 1)
               login = req['user']['login']
               comments = nil
               # Skip if it's not mergeable
