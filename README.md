@@ -1,5 +1,7 @@
-test-pull-requests
+Test Pull Requests
 ==================
+
+[![TravisCI](https://travis-ci.org/openshift/test-pull-requests.svg?branch=master)](https://travis-ci.org/openshift/test-pull-requests)
 
 Utility for serially testing and merging pull requests in conjunction with Jenkins.
 
