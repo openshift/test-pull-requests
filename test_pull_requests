@@ -439,7 +439,7 @@ module Hub
       recreate_comment(pull_id, bot_comment['id'], repo, comment)
 
       commit = get_last_commit(pull_id, repo)
-      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Tested")
+      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Passed")
     end
 
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
@@ -467,7 +467,8 @@ module Hub
         $stderr.puts e.message
       end
 
-      update_comment(bot_comment['id'], repo, comment)
+      commit = get_last_commit(pull_request['number'], repo)
+      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Passed")
       params = { :commit_message => "Merged by #{Properties['bot_github_user']}" }
       sleep_time = 1
       res = nil
@@ -484,6 +485,8 @@ module Hub
 
       res.error! unless res.success?
 
+      update_comment(bot_comment['id'], repo, comment)
+
       if settings['trello_card_refs']
         settings['trello_card_refs'].each do |ref|
           values = get_values_from_pull_request(pull_id, repo, /(#{ref}_\d+)/i, pull_request, comments)
@@ -498,9 +501,6 @@ module Hub
           $stderr.puts `trello comment '#{comment}' --card-url '#{value}'`
         end
       end
-
-      commit = get_last_commit(pull_request['number'], repo)
-      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Merged")
     end
 
     def test_merge_pull_request(pull_id, repo, settings)
@@ -1069,7 +1069,7 @@ popd
           repo_to_pull_request.each do |repo, pull_request|
             if status && build_url
               commit = get_last_commit(pull_request['number'], repo)
-              update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, "Tested")
+              update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, "Passed")
             end
             next if repo == base_repo
             recreate_comment_with_prefix(pull_request['number'], repo, settings['test_prefix'], updated_comment)
@@ -1332,8 +1332,17 @@ popd
 
           # Block until Jenkins actually increments the build number (this isn't transactional)
           $stderr.puts "  Now waiting until build number increments..."
-          while get_next_build(branch, settings) == next_build_num
-            sleep 1
+          tries = 1
+          while true
+            begin
+              while get_next_build(branch, settings) == next_build_num
+                sleep 1
+              end
+              break
+            rescue
+              raise if tries >= 3
+              tries += 1
+            end
           end
 
           # Now you can safely return with the submission registered
