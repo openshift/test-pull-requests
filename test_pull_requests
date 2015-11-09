@@ -417,7 +417,7 @@ module Hub
           end
         end
         commit = get_last_commit(pull_request['number'], repo)
-        update_status(settings['test_prefix'], commit['sha'], repo, 'pending', build_url, "Testing")
+        update_status(settings['test_prefix'], commit['sha'], repo, 'pending', build_url, 'Testing')
       end
 
       submitted_tests[settings['name']] = true unless settings['allow_multiple']
@@ -439,7 +439,7 @@ module Hub
       recreate_comment(pull_id, bot_comment['id'], repo, comment)
 
       commit = get_last_commit(pull_id, repo)
-      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Passed")
+      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, 'Passed')
     end
 
     def merge_pull_request(pull_id, repo, settings, merge_pretest_success_url=nil)
@@ -468,7 +468,8 @@ module Hub
       end
 
       commit = get_last_commit(pull_request['number'], repo)
-      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, "Passed")
+      update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, 'Passed')
+      sleep 10
       params = { :commit_message => "Merged by #{Properties['bot_github_user']}" }
       sleep_time = 1
       res = nil
@@ -1069,7 +1070,7 @@ popd
           repo_to_pull_request.each do |repo, pull_request|
             if status && build_url
               commit = get_last_commit(pull_request['number'], repo)
-              update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, "Passed")
+              update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, (status == 'success') ? 'Passed' : 'Failed')
             end
             next if repo == base_repo
             recreate_comment_with_prefix(pull_request['number'], repo, settings['test_prefix'], updated_comment)
