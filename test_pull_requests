@@ -428,7 +428,7 @@ module Hub
       bot_comment = get_comment_with_prefix(pull_id, repo, settings['test_prefix'])
       build_url = nil
       extended_tests = nil
-      if bot_comment['body'] =~ /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\))?/
+      if bot_comment['body'] =~ /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\).*)?/
         build_url = $1
         extended_tests = $2
       else
@@ -985,7 +985,7 @@ popd
               $stderr.puts "  Job is already queued"
             end
           end
-        when /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\))?/
+        when /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\).*)?/
           # This state means that the tests are already running
           # In this case we need to poll Jenkins to see if the build
           # is finished
