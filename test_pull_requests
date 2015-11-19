@@ -658,7 +658,7 @@ popd
 
       # See if we can find an existing bot comment
       comments.each do |comment|
-        if comment['body'] =~ /^#{comment_prefix}/ && (comment['user']['login'] == Properties['bot_github_user'])
+        if comment['body'] =~ /^#{comment_prefix} / && (comment['user']['login'] == Properties['bot_github_user'])
           prefix_comment = comment
           break
         end
