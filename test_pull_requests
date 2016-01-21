@@ -1158,7 +1158,7 @@ popd
           if $branches.include?(branch) || $branches.include?('*')
 
             $stderr.puts "  Updated at: #{req['updated_at']}"
-            if Time.now - Time.parse(req['updated_at']) < (12*60*60) || (rand(20) <= 1)
+            if Time.now - Time.parse(req['updated_at']) < (12*60*60) || (rand(100) <= 1)
               login = req['user']['login']
               comments = nil
               # Skip if it's not mergeable
