@@ -537,7 +537,7 @@ pushd #{repo}
   git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']}
   git pull #{pull_request['head']['repo']['ssh_url']} #{pull_request['head']['ref']} --tags
   git checkout #{pull_request['base']['ref']}
-  git merge tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
+  git merge --ff-only tpr_#{pull_request['head']['ref']}_#{pull_request['user']['login']}
 popd
 }
       output = `#{merge_command}`
