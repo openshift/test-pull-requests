@@ -768,9 +768,9 @@ popd
       return [trigger_time, trigger_login]
     end
 
-    def get_extended_tests(pull_request, comments, settings)
+    def get_extended_tests(pull_request, comments, branch, settings)
       extended_tests = []
-      if settings['allow_multiple']
+      if settings['allow_multiple'] && branch_settings(branch, settings)['extended_tests_param']
         extended_regex = /\[extended *:( *[^,\[\]]+ *(, *[^,\[\]]+ *)*)\]/i
         if pull_request['title'] =~ extended_regex
           extended_tests += $1.split(',')
@@ -1063,7 +1063,7 @@ popd
         end
         if submit_test_job
           delete_comment_with_prefix(id, base_repo, ACTION_PREFIX, comments)
-          extended_tests = get_extended_tests(req, comments, settings)
+          extended_tests = get_extended_tests(req, comments, branch, settings)
           submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
         elsif updated_comment
           recreate_comment(id, comment_id, base_repo, updated_comment)
