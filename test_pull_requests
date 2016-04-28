@@ -786,7 +786,6 @@ popd
           end
         end
         extended_tests.each do |test|
-          test.downcase!
           test.strip!
         end
         extended_tests.uniq!
