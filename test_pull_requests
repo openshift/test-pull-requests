@@ -1130,7 +1130,7 @@ popd
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count >= 5
+      if count >= 10
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
         ensure_labels(id, repo, [NEEDS_REBASE_LABEL])
       else
