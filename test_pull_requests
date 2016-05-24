@@ -394,7 +394,7 @@ module Hub
     def submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
       submitted_tests = submitted_tests_for_branch(branch)
       unless settings['allow_multiple']
-        if submitted_tests[settings['name']] || JenkinsAPI.is_previous_build_running?(branch, settings)
+        if submitted_tests[settings['name']] #|| JenkinsAPI.is_previous_build_running?(branch, settings)
           submitted_tests[settings['name']] = true
           $stderr.puts "  Waiting for existing build to finish"
           return
@@ -1238,9 +1238,19 @@ popd
         changed_after_eval = req_info[2]
         comments = req_info[3]
         settings = req_info[4]
-        process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
-
         branch = req['base']['ref']
+
+        if !settings['allow_multiple']
+          comments.each do |comment|
+            if (comment['user']['login'] == Properties['bot_github_user']) && (comment['body'] =~ /^#{settings['test_prefix']} Running \(([^\)]+)\)/)
+              submitted_tests = submitted_tests_for_branch(branch)
+              submitted_tests[settings['name']] = true
+              break
+            end
+          end
+        end
+
+        process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
 
         submitted_tests = submitted_tests_for_branch(branch)
 
