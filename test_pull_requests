@@ -1115,7 +1115,7 @@ popd
       if count <= 0
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable`
         comments = get_comments(id, repo) if comments.nil?
-        if delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments) || (rand(10) <= 1)
+        if delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments) || (rand(10) < 1)
           remove_labels(id, repo, [NEEDS_REBASE_LABEL])
         end
       else
@@ -1157,7 +1157,7 @@ popd
           if $branches.include?(branch) || $branches.include?('*')
 
             $stderr.puts "  Updated at: #{req['updated_at']}"
-            if Time.now - Time.parse(req['updated_at']) < (12*60*60) || (rand(100) <= 1)
+            if Time.now - Time.parse(req['updated_at']) < (12*60*60) || (rand(10) < 1)
               login = req['user']['login']
               comments = nil
               # Skip if it's not mergeable
