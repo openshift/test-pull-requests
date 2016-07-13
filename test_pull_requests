@@ -64,7 +64,7 @@ opts = GetoptLong.new(
 args = {}
 begin
   opts.each{ |k,v| args[k[2..-1].intern]=v }
-rescue GetoptLong::Error => e
+rescue GetoptLong::Error
   usage
 end
 
@@ -412,8 +412,8 @@ module Hub
 
       repo_to_pull_request.each do |repo, pull_request|
         if repo != base_repo
-          process_or_create_comment(pull_request['number'], repo, settings) do |comment_id, comment, comment_updated_at|
-            update_comment(comment_id, repo, running_comment)
+          process_or_create_comment(pull_request['number'], repo, settings) do |c_id, comment, comment_updated_at|
+            update_comment(c_id, repo, running_comment)
           end
         end
         commit = get_last_commit(pull_request['number'], repo)
@@ -735,7 +735,7 @@ popd
 
     def get_trusted_trigger_time(pull_request, comments, settings)
       login = pull_request['user']['login']
-      updated_at, changed_after_eval = get_updated_at(pull_request, comments, settings)
+      updated_at, _ = get_updated_at(pull_request, comments, settings)
       repo = pull_request['base']['repo']['name']
 
       trigger_regex = /\[#{settings['name']}\]/i
@@ -812,7 +812,7 @@ popd
           create_or_update_comment(pull_request['number'], repo, settings['test_prefix'], being_queued_comment, pull_request_comments)
         end
         pull_request_evaluated_time = get_evaluated_time(pull_request_comments, repo, settings)
-        pull_request_updated_at, pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments, settings)
+        _, pull_request_changed_after_eval = get_updated_at(pull_request, pull_request_comments, settings)
         if pull_request_changed_after_eval || pull_request_evaluated_time < trigger_updated_at
           commit = get_last_commit(pull_request['number'], repo)
           # Add a new evaluated marker
@@ -1269,7 +1269,7 @@ popd
             $stderr.puts "  Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count_branch[settings['name']]}"
             # Get ahead of the game and pretest requests
             if settings['pretest_settings_key'] && settings['pretest_comment'] && settings['pretest_queue_threshold'] && (skipped_count_branch[settings['name']] >= settings['pretest_queue_threshold'])
-              trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, Properties['settings'][settings['pretest_settings_key']])
+              trusted_trigger_time, _ = get_trusted_trigger_time(req, comments, Properties['settings'][settings['pretest_settings_key']])
               create_or_update_comment(req['number'], req['base']['repo']['name'], settings['pretest_comment'].gsub('[', '\[').gsub(']', '\]'), settings['pretest_comment'], comments) unless trusted_trigger_time
             end
           end
