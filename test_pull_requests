@@ -864,7 +864,8 @@ popd
           if pull_request['mergeable']
             repo_to_pull_request[addtl_pull_repo] = pull_request
             set_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login'])
-          else
+          # Do nothing if the PR has been merged
+          elsif !(pull_request['merged'])
             if set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login']) > 4
               comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' is not mergeable"
               $stderr.puts "  #{comment}"
