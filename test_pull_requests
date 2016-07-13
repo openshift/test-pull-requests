@@ -838,20 +838,10 @@ popd
       end
       commit = get_last_commit(pull_request['number'], pull_request['base']['repo']['name'])
 
-      changed_after_eval = true
-      if commit['sha'] == previous_sha
-        changed_after_eval = false
-      end
-      #GitHub API isn't consistent here
-      updated_at_str = nil
-      if commit.has_key?('commit')
-        updated_at_str = commit['commit']['committer']['date']
-      else
-        updated_at_str = commit['committer']['date']
-      end
+      updated_at = Time.parse(commit['commit']['committer']['date'])
+      changed_after_last_evaluation = commit['sha'] != previous_sha
 
-      updated_at = Time.parse(updated_at_str)
-      [updated_at, changed_after_eval]
+      [updated_at, changed_after_last_evaluation]
     end
 
     def add_coreq(addtl_pull_id, addtl_pull_repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at, base_pull_id, base_repo, comments)
