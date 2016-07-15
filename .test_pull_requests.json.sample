@@ -8,9 +8,9 @@
   "irc_channel": "#myircchannel",
   "bot_github_user": "mybotuser",
   "repo_to_product": {
-     "myrepo1": "MyProduct",
-     "myrepo2": "MyOtherProduct"
-  }
+    "myrepo1": "MyProduct",
+    "myrepo2": "MyOtherProduct"
+  },
   "action_required_prefix": "Action Required:",
   "repo_groups": {
     "myrepo1": "group1",
@@ -21,18 +21,34 @@
       "name": "test",
       "test_prefix": "Test Results:",
       "allow_multiple": true,
-      "branches": { "*": {"jenkins_job_name": "test_pull_requests_stage",
-                              "downstream_job_name": "build_image_stage",
-                              "build_token": "mytoken"},
-                    "master": {"jenkins_job_name": "test_pull_requests",
-                               "downstream_job_name": "build_image",
-                               "build_token": "mytoken"
-                               "addtl_jenkins_params": {"group1": {"param1": "value1",
-                                                                   "param2": "value2"} }
-                              } },
+      "branches": {
+        "*": {
+          "jenkins_job_name": "test_pull_requests_stage",
+          "downstream_job_name": "build_image_stage",
+          "build_token": "mytoken"
+        },
+        "master": {
+          "jenkins_job_name": "test_pull_requests",
+          "downstream_job_name": "build_image",
+          "build_token": "mytoken",
+          "addtl_jenkins_params": {
+            "group1": {
+              "param1": "value1",
+              "param2": "value2"
+            }
+          }
+        }
+      },
       "repo_to_teams": {
-        "myrepo1": ["111111", "222222", "333333"],
-        "myrepo2": ["111111", "444444"]
+        "myrepo1": [
+          "111111",
+          "222222",
+          "333333"
+        ],
+        "myrepo2": [
+          "111111",
+          "444444"
+        ]
       },
       "repo_to_pull_id_param": {
         "myrepo1": "MYREPO1_PULL_ID",
@@ -46,17 +62,28 @@
       "pretest_settings_key": "test_settings",
       "pretest_comment": "[Test]ing while waiting on the merge queue",
       "allow_multiple": false,
-      "branches": { "*": {"jenkins_job_name": "merge_pull_requests_stage",
-                              "downstream_job_name": "build_image_stage",
-                              "image_base_name": "devenv-stage",
-                              "build_token": "mytoken"},
-                    "master": {"jenkins_job_name": "merge_pull_requests",
-                               "downstream_job_name": "build_image",
-                               "image_base_name": "devenv",
-                               "build_token": "mytoken"} },
+      "branches": {
+        "*": {
+          "jenkins_job_name": "merge_pull_requests_stage",
+          "downstream_job_name": "build_image_stage",
+          "image_base_name": "devenv-stage",
+          "build_token": "mytoken"
+        },
+        "master": {
+          "jenkins_job_name": "merge_pull_requests",
+          "downstream_job_name": "build_image",
+          "image_base_name": "devenv",
+          "build_token": "mytoken"
+        }
+      },
       "repo_to_teams": {
-        "myrepo1": ["111111", "222222"],
-        "myrepo2": ["111111"]
+        "myrepo1": [
+          "111111",
+          "222222"
+        ],
+        "myrepo2": [
+          "111111"
+        ]
       },
       "repo_to_pull_id_param": {
         "myrepo1": "MYREPO1_PULL_ID",
