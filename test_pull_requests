@@ -124,6 +124,12 @@ NEEDS_REBASE_LABEL          = "needs-rebase"
 GITHUB_API_BASE_URL = 'https://api.github.com'
 GITHUB_BASE_URL = 'https://github.com'
 
+# We use a saturating counter to get a more stable reading of mergeability from
+# the GitHub API for a pull request. The following two values are the rails at
+# which we saturate.
+NOT_MERGEABLE = 10
+MERGEABLE = 0
+
 def evaluated_marker(repo, settings)
   "Evaluated for #{Properties['repo_to_product'][repo].downcase} #{settings['name']} up to %s"
 end
@@ -911,8 +917,7 @@ popd
             set_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login'])
           # Do nothing if the PR has been merged
           elsif !(pull_request['merged'])
-            # TODO: make this check against the saturation point, 10, not some arbitrary threshold like 4
-            if set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login']) > 4
+            if set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login']) >= NOT_MERGEABLE
               comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' is not mergeable"
               $stderr.puts "  #{comment}"
               add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
@@ -1240,7 +1245,7 @@ popd
     #
     # The saturation points are at 0 and 10, with an initial state of 0, so i.e. the default
     # state is to consider the pull request mergeable, and this state will not change until
-    # a net of four unmergeable responses come in from the GitHub API. When set_mergeable is
+    # a net of ten unmergeable responses come in from the GitHub API. When set_mergeable is
     # called, the counter for the specific pull ID is decremented if it hasn't saturated; 
     # when set_not_mergeable is called, the counter is incremented unless it is saturated.
 
@@ -1249,12 +1254,12 @@ popd
     # above is saturated at 0.
     def set_mergeable(id, repo, login, comments=nil)
       merge_id="#{repo}_#{id}_#{login}"
-      count = 0
+      count = MERGEABLE
       previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergeable`.chomp
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count <= 0
+      if count <= MERGEABLE
         # If our counter has saturated at 0, we want to remove any comments and labels about
         # rebasing as this pull request is mergeable
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable`
@@ -1283,12 +1288,12 @@ popd
     # the value of the current counter.
     def set_not_mergeable(id, repo, login)
       merge_id="#{repo}_#{id}_#{login}"
-      count = 0
+      count = MERGEABLE
       previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergeable`.chomp
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count >= 10
+      if count >= NOT_MERGEABLE
         # If our counter is saturated at 10, we want to add the comment and label
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
         ensure_labels(id, repo, [NEEDS_REBASE_LABEL])
@@ -1335,7 +1340,7 @@ popd
                 comments = get_comments(id, repo) if comments.nil?
                 set_mergeable(id, repo, login, comments)
               else
-                if set_not_mergeable(id, repo, login) == 0
+                if set_not_mergeable(id, repo, login) == MERGEABLE
                   mergeability_in_flux = true
                 end
                 next
