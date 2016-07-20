@@ -124,6 +124,12 @@ NEEDS_REBASE_LABEL          = "needs-rebase"
 GITHUB_API_BASE_URL = 'https://api.github.com'
 GITHUB_BASE_URL = 'https://github.com'
 
+# We use a saturating counter to get a more stable reading of mergeability from
+# the GitHub API for a pull request. The following two values are the rails at
+# which we saturate.
+NOT_MERGEABLE = 10
+MERGEABLE = 0
+
 def evaluated_marker(repo, settings)
   "Evaluated for #{Properties['repo_to_product'][repo].downcase} #{settings['name']} up to %s"
 end
@@ -190,8 +196,21 @@ module Hub
       end
     end
 
+    # is_mergeable? is a more stable way of determining if a pull request is mergeable than
+    # probing the pull request object as `pull_request["mergeable"]`. It seems like our first
+    # request for the mergeable status may trigger a re-calculation, so if that is the case,
+    # we will re-try the request a couple of times to get the correct status
+    #
+    # The GitHub API will return one of three states for pull_request[mergeable]:
+    #  - true, if the pull request has been evaluated and found not to have merge conflicts
+    #  - false, if the pull request has been evaluated and found to have merge conflicts
+    #  - null, if the pull request has not yet been evaluated and the status is unknown
+    # In the third case, we will defer to the pull_request[mergeable_state], which gives
+    # a further breakdown of states to determine if we will be testing this pull request.
+    # We try three times and exit early if we get a positive result as we would like to err
+    # on the side of running a test (and it quickly failing due to merge conflicts) rather
+    # than not running a set of tests on a valid pull request.
     def is_mergeable?(id, repo, num_tries=3)
-      # This call isn't reliable so make sure
       (1..num_tries).each do |i|
         pull_request = get_pull_request(id, repo, num_tries)
         mergeable = pull_request['mergeable']
@@ -211,6 +230,7 @@ module Hub
       return false
     end
 
+    # get_last_commit returns the most recent commit in the branch the pull request originates from
     def get_last_commit(id, repo, num_tries=3)
       commits = nil
       if $commits[repo]
@@ -602,14 +622,19 @@ popd
       end
     end
 
-    #
-    # Yields on the OpenShift bot comment with the test results.
-    # Creates a placeholder comment if none exist
-    #
+    # process_or_create_comment yields the comment body and metadata for the last bot
+    # comment for a particular pull request. If no comment exists at the time this is
+    # called, a place-holder comment is made to initialize the pull request analysis 
+    # process
     def process_or_create_comment(issue_id, repo, settings, comments=nil)
       bot_comment = get_comment_with_prefix(issue_id, repo, settings['test_prefix'], comments)
 
       unless bot_comment
+        # In the process of evaluating a pull request, we could have called this method
+        # previously and, since we're not updating our internal cache of comments, the
+        # comments array, we could have stale data in that cache, so we want to force
+        # get_comment_with_prefix to fetch a new list of comments to make sure we find
+        # a bot comment if it exists but we don't have it cached
         bot_comment = get_comment_with_prefix(issue_id, repo, settings['test_prefix'])
         unless bot_comment
           # No comment found, create a new one and yield to it
@@ -622,9 +647,9 @@ popd
       yield bot_comment['id'], bot_comment['body'], Time.parse(bot_comment['updated_at'])
     end
 
-    #
-    # Creates or updates a comment with given prefix
-    #
+    # create_or_update_comment tries to update the previous bot comment with the given
+    # prefix to contain the new comment body, or, if there is no previous bot comment
+    # with the given prefix, tries to create a new bot comment instead
     def create_or_update_comment(issue_id, repo, comment_prefix, comment, comments=nil)
       bot_comment = get_comment_with_prefix(issue_id, repo, comment_prefix, comments)
 
@@ -649,15 +674,12 @@ popd
       return comment
     end
 
-    #
-    # Gets a comment with given prefix
-    #
+    # get_comment_with_prefix returns a comment authored by the bot with the given prefix, if one exists
     def get_comment_with_prefix(issue_id, repo, comment_prefix, comments=nil)
       prefix_comment = nil
 
       comments = comments ? comments : get_comments(issue_id, repo)
 
-      # See if we can find an existing bot comment
       comments.each do |comment|
         if comment['body'] =~ /^#{comment_prefix} / && (comment['user']['login'] == Properties['bot_github_user'])
           prefix_comment = comment
@@ -722,6 +744,8 @@ popd
       end
     end
 
+    # get_evaluated_time returns the time at which the bot last evaluated this pull request,
+    # or returns nil if the bot never evaluated the pull request at all
     def get_evaluated_time(comments, repo, settings)
       comments = sort_comments(comments)
 
@@ -733,6 +757,8 @@ popd
       return nil
     end
 
+    # get_trusted_trigger_time returns the time at which the last trusted user added a trigger,
+    # as best as we can tell. This will not always be able to determime the exact trigger time.
     def get_trusted_trigger_time(pull_request, comments, settings)
       login = pull_request['user']['login']
       updated_at, _ = get_updated_at(pull_request, comments, settings)
@@ -743,6 +769,13 @@ popd
       trigger_login = nil
       if pull_request['title'] =~ trigger_regex || pull_request['body'] =~ trigger_regex
         if user_trusted?(login, repo, settings)
+          # Once we determine that the trusted user has a trigger statement in their pull
+          # request title or body, we need to determine what time we will claim the
+          # trigger was added. We can't use the created_at time, since the user could
+          # edit their title or body to add the trigger, and we can't use the updated_at
+          # time, since *any* action on the pull request will update that time. So,
+          # we prefer to use the last time that the bot evaluated the pull request, and,
+          # if the bot has never evaluated the pull request, we use the updated_at time.
           evaluated_time = get_evaluated_time(comments, repo, settings)
           trigger_time = evaluated_time || Time.parse(pull_request['updated_at'])
           trigger_login = login
@@ -751,12 +784,23 @@ popd
 
       comments = sort_comments(comments)
 
+      # Even if a trigger statement was found in the pull request body or title,
+      # a more recent trigger could exist in the comments, and we want to ensure
+      # that we return the most recent trusted trigger time
       comments.each do |comment|
         if comment['body'] =~ trigger_regex
           comment_login = comment['user']['login']
           if user_trusted?(comment_login, repo, settings)
             trigger_comment_updated_at = Time.parse(comment['updated_at'])
+            # If we find a trigger phrase from a trusted user in a comment, we will use
+            # the time that their comment was made as the trigger time if and only if
+            # the trusted user posted their trigger phrase after the last commit was
+            # created, ensuring that the trusted user has signed off on all of the 
+            # commits to be tested
             if user_trusted?(login, repo, settings) || trigger_comment_updated_at > updated_at
+              # Furthermore, we only want to update the trusted trigger time if
+              # we have a more recent time from the trusted user's comment than
+              # the time we got by investigating the pull request body and title
               if !trigger_time || trigger_comment_updated_at > trigger_time
                 trigger_time = trigger_comment_updated_at
                 trigger_login = comment_login
@@ -794,6 +838,8 @@ popd
       return extended_tests
     end
 
+    # sort_comments sorts an array of comments by the time
+    # they were last updated, most recently updated first
     def sort_comments(comments)
       comments = comments.sort_by do |comment|
         Time.parse(comment['updated_at'])
@@ -802,7 +848,11 @@ popd
       comments
     end
 
-    # Updates all the bot markers for the involved pull requests.  To be called after you have validated the tests should be kicked off again
+    # update_evaluated_markers should be called after it is known that the Jenkins job should
+    # be triggered for this pull request. evaluate_updated_markers updates the GitHub bot's 
+    # `evaluated` comment to reflect the fact that we have now evaluated the pull request again. 
+    # If the pull request was previously waiting for a stable downstream build or in the build
+    # queue, we add a comment to reflect that we are re-calculating the build queue position.
     def update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings)
       repo_to_pull_request.each do |repo, pull_request|
         pull_request_comments = get_comments(pull_request['number'], repo)
@@ -827,6 +877,9 @@ popd
       end
     end
 
+    # get_updated_at returns the time at which the last commit on the pull request was created, and
+    # whether or not the pull request has been updated since the last time the bot saw it, determined by
+    # looking at the commit referenced in the last evaluated comment and comparing the latest commit SHA
     def get_updated_at(pull_request, comments, settings)
       updated_at = nil
       comments = sort_comments(comments)
@@ -844,19 +897,27 @@ popd
       [updated_at, changed_after_last_evaluation]
     end
 
+    # add_coreq adds a co-requisite pull request to the repo_to_pull_request mapping if the co-requisite statement
+    # is trusted and the co-requisite pull request is merge-able.
     def add_coreq(addtl_pull_id, addtl_pull_repo, login, trigger_login, repo_to_pull_request, settings, trigger_updated_at, updated_at, base_pull_id, base_repo, comments)
       $stderr.puts "  Processing dependency on pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}'"
-      trusted = user_trusted?(login, addtl_pull_repo, settings)
-      # It's ok if the user is trusted or the trigger was added after the comment
-      if trusted || (user_trusted?(trigger_login, addtl_pull_repo, settings) && (trigger_updated_at && trigger_updated_at >= updated_at))
+      # We can add the co-requisite if the author of the original pull request is trusted, or if the author of the trigger
+      # statement is trusted and they authored the trigger statement after the co-requisite statement was made
+      author_trusted = user_trusted?(login, addtl_pull_repo, settings)
+      trigger_author_trusted = user_trusted?(trigger_login, addtl_pull_repo, settings)
+      if author_trusted || (trigger_author_trusted && (trigger_updated_at && trigger_updated_at >= updated_at))
         pull_request = get_pull_request(addtl_pull_id, addtl_pull_repo, 2)
         if pull_request
+          # On co-requisite pull requests, we do not expect there to be trigger statements, as the 
+          # triggers on the parent pull request will trigger builds and tests with the co-requisites
+          # therefore, we need to manage the mergeable state of the co-requisite pull requests here
+          # while we're considering them for their parent
           if pull_request['mergeable']
             repo_to_pull_request[addtl_pull_repo] = pull_request
             set_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login'])
           # Do nothing if the PR has been merged
           elsif !(pull_request['merged'])
-            if set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login']) > 4
+            if set_not_mergeable(addtl_pull_id, addtl_pull_repo, pull_request['user']['login']) >= NOT_MERGEABLE
               comment = "Linked pull request #{addtl_pull_id} in repo '#{addtl_pull_repo}' is not mergeable"
               $stderr.puts "  #{comment}"
               add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
@@ -898,7 +959,7 @@ popd
       $stderr.puts "  Trigger updated at: #{trigger_updated_at}"
       $stderr.puts "  Evaluated time: #{evaluated_time}"
 
-      # Gather any dependencies from trusted users
+      # Gather any dependencies from trusted users and add them to the repo_to_pull_request mapping
       $repo_to_pull_regex.each do |repo, regex|
         next if repo == base_repo
         if req['body'] =~ regex
@@ -924,10 +985,23 @@ popd
       process_or_create_comment(id, base_repo, settings, comments) do |comment_id, comment, comment_updated_at|
         submit_test_job = false
         resubmit_test_job = false
+
+        # Given the last comment made by the bot, we can determine the state in which evaluation
+        # of this pull request ended previously, depending on which we will take different actions
         case comment
         when /^#{settings['test_prefix']} Evaluating/
+          # In this case, we have just made a placeholder comment as we have not seen this pull
+          # request previously and are evaluating it for the first time. To move forward, we want
+          # to ensure that all of the co-requisite pull requests have no updates more recent than
+          # the most recent trigger we have seen.
+          # TODO: we should *always* check this, above, not only in this state
+          #
+          # Two state transitions are possible out of this state:
+          #  - into the 'waiting for stable build' phase, as we cannot move to begin a test unless
+          #    the downstream jobs in Jenkins are ready to run them
+          #  - into the 'running tests' phase, if we have a trusted trigger that covers all the
+          #    commits in the main pull request and any co-requisites
           $stderr.puts "  Evaluating..."
-          # This is the state for a completely new comment
 
           if JenkinsAPI.is_project_stable?(branch, settings)
             # Make sure there is a trigger in place that is still later than the updated dates of each of the pull requests
@@ -939,15 +1013,35 @@ popd
                   break
                 end
               end
+              # the main pull request and all of the co-requisite pull requests haven't been
+              # updated since the last trusted trigger, so we can begin testing
               update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings)
               submit_test_job = true
             else
+              # no trusted trigger statement has been made, so we cannot build or test this pull
               create_or_update_comment(id, base_repo, ACTION_PREFIX, ACTION_NOT_TEAM, comments)
             end
           else
             updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
           end
+
         when /^#{settings['test_prefix']} Waiting/
+          # In this case, we are in one of two states:
+          #  1) waiting for a downstream project in Jenkins to be stable, so we can begin tests
+          #  2) waiting in a queue to begin tests
+          #
+          # Two state transitions are possible from state 1):
+          #  - loop back into state 1) if the Jenkins project is unstable
+          #  - into the 'running tests' state if the Jenkins project is stable
+          # If the main pull request or any of the co-requisites have been
+          # updated since the last time we evaluated the main pull request, we need to re-queue the
+          # build and test.
+          # 
+          # No state transitions occur from state 2)
+          # TODO: currently, we have two invalid states that will make it through this logic: the
+          # cases where we are not in the build queue but have submitted tests, and the cases where
+          # we are in the build queue but have not submitted tests. Neither of these cases are valid
+          # and we need to reconsider why they're tolerated
           $stderr.puts "  Waiting..."
           # Only submit the tests if the project is stable
           if JenkinsAPI.is_project_stable?(branch, settings)
@@ -977,9 +1071,17 @@ popd
             end
           end
         when /^#{settings['test_prefix']} Running \(([^\)]+)\)( \(Extended Tests: [^\)]+\).*)?/
-          # This state means that the tests are already running
-          # In this case we need to poll Jenkins to see if the build
-          # is finished
+          # In this state, we have triggered tests and made it through the build queue, so there
+          # are running tests
+          #
+          # There are two state transitions possible from this state:
+          #  - loop back into this state if the tests are still running
+          #  - into the appropriate post-build state, of which I know of:
+          #    - SUCCESS
+          #    - FAILURE
+          #    - ABORTED
+          #    - UNSTABLE
+          #    - NOTFOUND
 
           # Capture the build_url from the regex match
           build_url = $1
@@ -997,11 +1099,35 @@ popd
             status = result == 'SUCCESS' ? 'success' : 'failure'
           end
         else
+          # In this case, we're in one of three states:
+          #  1) ACTION_NOT_MERGE: the pull request is not mergeable and needs a rebase
+          #  2) ACTION_NOT_TEAM: the pull request has no trusted triggers
+          #  3) the build has finished, with one of the following states:
+          #    - SUCCESS
+          #    - FAILURE
+          #    - ABORTED
+          #    - UNSTABLE
+          #    - NOTFOUND
+          #
+          # Regardless of the current state, since we have a trusted trigger, we want to
+          # re-submit this pull request for testing.
           $stderr.puts "  Finished..."
           $stderr.puts "  #{comment}" if comment =~ /^#{settings['test_prefix']} .+ \([^\)]+\)/
           resubmit_test_job = true
         end
+        
+        # Once we have considered the current state of the pull request, we need to determine
+        # if we are going to submit this pull request for testing
         if resubmit_test_job
+          # If analysis of the current state has determined that we should re-submit the job
+          # for testing, we need to check that we meet all criteria for resubmission:
+          #  - is the project stable? [TODO: we seem to be checking this always, move up?]
+          #  - have there been any changes in the main pull request since the last evaluation?
+          #  - have there been any changes in the co-requisite pull requests since the last evaluation?
+          #
+          # TODO: this logic has bled out and should be moved into a function that is called
+          # inside of each state case above, instead of being called this way. Ideally each
+          # state case above should be able to either submit or not submit tests internally.
           submit_test_job = false
 
           $stderr.puts "  Checking whether we should resubmit"
@@ -1052,14 +1178,25 @@ popd
             update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings)
           end
         end
+
+        # To complete the transition into the next phase of the pull request evaluation,
+        # we need to take the correct external actions if necessary and update the bot 
+        # comment to reflect the new state
         if submit_test_job
           delete_comment_with_prefix(id, base_repo, ACTION_PREFIX, comments)
           extended_tests = get_extended_tests(req, comments, branch, settings)
           submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
         elsif updated_comment
+          # If we have an `updated_comment`, we have determined which state we want to
+          # transition into above literally and simply need to update the comment to
+          # reflect that
           recreate_comment(id, comment_id, base_repo, updated_comment)
           repo_to_pull_request.each do |repo, pull_request|
             if status && build_url
+              # One of the literal transitions we specify is the transition from running
+              # tests to reporting the results, so if a result has been specified we
+              # furthermore know that we are transitiong into the post-test state and can
+              # update the GitHub pull request status
               commit = get_last_commit(pull_request['number'], repo)
               update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, (status == 'success') ? 'Passed' : 'Failed')
             end
@@ -1067,6 +1204,8 @@ popd
             recreate_comment_with_prefix(pull_request['number'], repo, settings['test_prefix'], updated_comment)
           end
         else
+          # If we are not running tests and have not specified a literal state to transition
+          # into, we have one more transition to check: from post-build sucess to merge
           Properties['settings'].each_value do |s|
             if s['pretest_settings_key'] && merge_pretest_success
               if Properties['settings'][s['pretest_settings_key']]['name'] == settings['name']
@@ -1097,38 +1236,74 @@ popd
 
     end
 
+    # The GitHub mergeable API is flaky, so we use an external file ``database'' to record
+    # pull request mergeability responses with a biased saturating counter so that pull
+    # request comment/label actions are only taken after a critical amount of net positive
+    # or negative API responses. However, a pull request is immediately chosen not to be 
+    # tested after the first unmergeable result, even if it takes longer for the UX comment
+    # and label to be applied.
+    #
+    # The saturation points are at 0 and 10, with an initial state of 0, so i.e. the default
+    # state is to consider the pull request mergeable, and this state will not change until
+    # a net of ten unmergeable responses come in from the GitHub API. When set_mergeable is
+    # called, the counter for the specific pull ID is decremented if it hasn't saturated; 
+    # when set_not_mergeable is called, the counter is incremented unless it is saturated.
+
+    # set_mergeable updates the pull request at repo/pull/id to remove labels and comments
+    # that indicate a rebase is necessary. The update happens when the counter described
+    # above is saturated at 0.
     def set_mergeable(id, repo, login, comments=nil)
       merge_id="#{repo}_#{id}_#{login}"
-      count = 0
+      count = MERGEABLE
       previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergeable`.chomp
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count <= 0
+      if count <= MERGEABLE
+        # If our counter has saturated at 0, we want to remove any comments and labels about
+        # rebasing as this pull request is mergeable
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable`
         comments = get_comments(id, repo) if comments.nil?
+
+        # In the majority of cases, we have all of the comments for a pull request, so we can
+        # look to see if an ACTION_NOT_MERGE comment exists with zero additional API traffic.
+        # If we find an ACTION_NOT_MERGE comment, we remove it, and furthermore we know we should
+        # also delete the NEEDS_REBASE_LABEL. If we didn't remove the comment (because it didn't
+        # exist, or because we failed through the API), we want to try to remove the label
+        # anyway to ensure that the UX for PRs is good. Since we do *not* have the labels for
+        # a PR, this is a costly operation, so we do not attempt to do it always, only when we
+        # know for sure we need to, or once in a while randomly.
         if delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments) || (rand(10) < 1)
           remove_labels(id, repo, [NEEDS_REBASE_LABEL])
         end
       else
+        # if our counter is not saturated, we pull it towards 0
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable && echo "#{merge_id}=#{(count-1).to_s}" >> ~/test_pull_request_not_mergeable`
       end
     end
 
+    # set_not_mergeable updates the pull request at repo/pulls/id to add a comment and label
+    # that informs the author that a rebase is necessary to merge the pull request. The update
+    # happens when the counter described above is saturated at 10. set_not_mergeable will return
+    # the value of the current counter.
     def set_not_mergeable(id, repo, login)
       merge_id="#{repo}_#{id}_#{login}"
-      count = 0
+      count = MERGEABLE
       previous_merge_result=`grep #{merge_id} ~/test_pull_request_not_mergeable`.chomp
       if !previous_merge_result.empty? && previous_merge_result =~ /#{merge_id}=(\d+)/
         count = $1.to_i
       end
-      if count >= 10
+      if count >= NOT_MERGEABLE
+        # If our counter is saturated at 10, we want to add the comment and label
         create_or_update_comment(id, repo, ACTION_PREFIX, ACTION_NOT_MERGE)
         ensure_labels(id, repo, [NEEDS_REBASE_LABEL])
       else
+        # If our counter is not saturated, we pull it towards 10
         `sed -i "/#{merge_id}=/d" ~/test_pull_request_not_mergeable && echo "#{merge_id}=#{(count+1).to_s}" >> ~/test_pull_request_not_mergeable`
       end
-      count #return count of how many times this has happened (used as stability measure, Github becomes unstable for mergeability right after a merge happens)
+      # return the previous value of the saturating counter so callers can consume it to
+      # determine stability level
+      count
     end
 
     #
@@ -1146,9 +1321,15 @@ popd
 
           branch = req['base']['ref']
 
+          # We only want to consider pull requests into branches we care about
           if $branches.include?(branch) || $branches.include?('*')
 
             $stderr.puts "  Updated at: #{req['updated_at']}"
+            # We only want to consider pull requests that have been modified in
+            # the last twelve hours, to stop us from doing extra work when we
+            # don't need to. Also, just to ensure that we don't forget a pull
+            # request forever on accident, there is a 10% chance we'll consider
+            # a pull request even if it is inactive
             if Time.now - Time.parse(req['updated_at']) < (12*60*60) || (rand(10) < 1)
               login = req['user']['login']
               comments = nil
@@ -1159,7 +1340,7 @@ popd
                 comments = get_comments(id, repo) if comments.nil?
                 set_mergeable(id, repo, login, comments)
               else
-                if set_not_mergeable(id, repo, login) == 0
+                if set_not_mergeable(id, repo, login) == MERGEABLE
                   mergeability_in_flux = true
                 end
                 next
@@ -1167,6 +1348,8 @@ popd
 
               comments = get_comments(id, repo) if comments.nil?
 
+              # We only want to consider pull requests where the last trigger we found
+              # is from a trusted user
               permission_denied = Array.new(Properties['settings'].length, false)
               # Has a merge or test been requested by a trusted user?
               Properties['settings'].values.each_with_index do |settings, i|
@@ -1215,6 +1398,8 @@ popd
         exit
       end
 
+      # Consider the pull requests we have deemed valid in
+      # order of the time they were last updated, oldest first
       sorted_pull_requests = pull_requests.sort_by do |req_info|
         req_info[1]
       end
@@ -1232,6 +1417,9 @@ popd
         settings = req_info[4]
         branch = req['base']['ref']
 
+        # If we're only allowing sequential tests in this tag, we want to find
+        # any pull request in the 'running tests' state and signal that there
+        # is a test running
         if !settings['allow_multiple']
           comments.each do |comment|
             if (comment['user']['login'] == Properties['bot_github_user']) && (comment['body'] =~ /^#{settings['test_prefix']} Running \(([^\)]+)\)/)
@@ -1247,6 +1435,9 @@ popd
         submitted_tests = submitted_tests_for_branch(branch)
 
         if !settings['allow_multiple'] && submitted_tests[settings['name']]
+          # If we're only allowing sequential tests on this tag and there is a test running,
+          # and we are waiting to test, we need to correctly determine the position in the
+          # test queue that we are at and post it in a bot comment on the pull request
           comments = get_comments(req['number'], req['base']['repo']['name'])
 
           bot_comment = get_comment_with_prefix(req['number'], req['base']['repo']['name'], settings['test_prefix'], comments)
