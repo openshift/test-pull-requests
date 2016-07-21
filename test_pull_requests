@@ -624,7 +624,7 @@ popd
 
     # process_or_create_comment yields the comment body and metadata for the last bot
     # comment for a particular pull request. If no comment exists at the time this is
-    # called, a place-holder comment is made to initialize the pull request analysis 
+    # called, a place-holder comment is made to initialize the pull request analysis
     # process
     def process_or_create_comment(issue_id, repo, settings, comments=nil)
       bot_comment = get_comment_with_prefix(issue_id, repo, settings['test_prefix'], comments)
@@ -795,7 +795,7 @@ popd
             # If we find a trigger phrase from a trusted user in a comment, we will use
             # the time that their comment was made as the trigger time if and only if
             # the trusted user posted their trigger phrase after the last commit was
-            # created, ensuring that the trusted user has signed off on all of the 
+            # created, ensuring that the trusted user has signed off on all of the
             # commits to be tested
             if user_trusted?(login, repo, settings) || trigger_comment_updated_at > updated_at
               # Furthermore, we only want to update the trusted trigger time if
@@ -849,8 +849,8 @@ popd
     end
 
     # update_evaluated_markers should be called after it is known that the Jenkins job should
-    # be triggered for this pull request. evaluate_updated_markers updates the GitHub bot's 
-    # `evaluated` comment to reflect the fact that we have now evaluated the pull request again. 
+    # be triggered for this pull request. evaluate_updated_markers updates the GitHub bot's
+    # `evaluated` comment to reflect the fact that we have now evaluated the pull request again.
     # If the pull request was previously waiting for a stable downstream build or in the build
     # queue, we add a comment to reflect that we are re-calculating the build queue position.
     def update_evaluated_markers(repo_to_pull_request, trigger_updated_at, settings)
@@ -908,7 +908,7 @@ popd
       if author_trusted || (trigger_author_trusted && (trigger_updated_at && trigger_updated_at >= updated_at))
         pull_request = get_pull_request(addtl_pull_id, addtl_pull_repo, 2)
         if pull_request
-          # On co-requisite pull requests, we do not expect there to be trigger statements, as the 
+          # On co-requisite pull requests, we do not expect there to be trigger statements, as the
           # triggers on the parent pull request will trigger builds and tests with the co-requisites
           # therefore, we need to manage the mergeable state of the co-requisite pull requests here
           # while we're considering them for their parent
@@ -1036,7 +1036,7 @@ popd
           # If the main pull request or any of the co-requisites have been
           # updated since the last time we evaluated the main pull request, we need to re-queue the
           # build and test.
-          # 
+          #
           # No state transitions occur from state 2)
           # TODO: currently, we have two invalid states that will make it through this logic: the
           # cases where we are not in the build queue but have submitted tests, and the cases where
@@ -1115,7 +1115,7 @@ popd
           $stderr.puts "  #{comment}" if comment =~ /^#{settings['test_prefix']} .+ \([^\)]+\)/
           resubmit_test_job = true
         end
-        
+
         # Once we have considered the current state of the pull request, we need to determine
         # if we are going to submit this pull request for testing
         if resubmit_test_job
@@ -1180,7 +1180,7 @@ popd
         end
 
         # To complete the transition into the next phase of the pull request evaluation,
-        # we need to take the correct external actions if necessary and update the bot 
+        # we need to take the correct external actions if necessary and update the bot
         # comment to reflect the new state
         if submit_test_job
           delete_comment_with_prefix(id, base_repo, ACTION_PREFIX, comments)
@@ -1239,14 +1239,14 @@ popd
     # The GitHub mergeable API is flaky, so we use an external file ``database'' to record
     # pull request mergeability responses with a biased saturating counter so that pull
     # request comment/label actions are only taken after a critical amount of net positive
-    # or negative API responses. However, a pull request is immediately chosen not to be 
+    # or negative API responses. However, a pull request is immediately chosen not to be
     # tested after the first unmergeable result, even if it takes longer for the UX comment
     # and label to be applied.
     #
     # The saturation points are at 0 and 10, with an initial state of 0, so i.e. the default
     # state is to consider the pull request mergeable, and this state will not change until
     # a net of ten unmergeable responses come in from the GitHub API. When set_mergeable is
-    # called, the counter for the specific pull ID is decremented if it hasn't saturated; 
+    # called, the counter for the specific pull ID is decremented if it hasn't saturated;
     # when set_not_mergeable is called, the counter is incremented unless it is saturated.
 
     # set_mergeable updates the pull request at repo/pull/id to remove labels and comments
