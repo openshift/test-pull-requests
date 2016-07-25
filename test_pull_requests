@@ -115,6 +115,8 @@ $branches.each do |branch|
   $submitted_tests[branch] = {}
 end
 
+BASE_SHA_PREFIX             = "Tested against base commit"
+
 ACTION_PREFIX               = Properties['action_required_prefix']
 ACTION_NOT_MERGE            = "#{ACTION_PREFIX} Pull request cannot be automatically merged, please rebase your branch from latest HEAD and push again"
 ACTION_NOT_TEAM             = "#{ACTION_PREFIX} Please contact #{Properties['irc_channel']} to have this pull request manually reviewed and tested"
@@ -457,6 +459,22 @@ module Hub
       comment = "#{settings['test_prefix']} SUCCESS (#{build_url})"
       comment += extended_tests if extended_tests
       recreate_comment(pull_id, bot_comment['id'], repo, comment)
+
+      bot_sha_comment = get_comment_with_prefix(pull_id, repo, BASE_SHA_PREFIX)
+      base_sha_command = %{
+set -ex
+pushd #{repo} >&/dev/null
+git merge-base HEAD origin/master
+popd >&/dev/null
+}
+      base_sha = `#{base_sha_command}`
+      sha_comment = "#{BASE_SHA_PREFIX} #{base_sha}"
+
+      if bot_sha_comment.nil?
+        add_comment(pull_id, repo, sha_comment)
+      else
+        recreate_comment(pull_id, bot_sha_comment['id'], repo, sha_comment)
+      end
 
       commit = get_last_commit(pull_id, repo)
       update_status(settings['test_prefix'], commit['sha'], repo, 'success', build_url, 'Passed')
