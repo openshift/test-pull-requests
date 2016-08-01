@@ -13,10 +13,12 @@ Utility for serially testing and merging pull requests in conjunction with Jenki
    * If you have prereq/coreq pull requests, you can add their urls (Ex: ​https://github.com/openshift/origin-server/pull/1) to the comments (one per repo supported), and they will be automatically included in the testing.
    * The results of the test will be put in the pull request. If they don't pass, you'll need to fix the issues before continuing
  * Similar to the `[test]` flag above, you must add the `[merge]` flag to the title or a comment of the pull request.  This is the only way you should be getting your changes into the master or stage branches.  The merge flag (handles prereqs the same as `[test]`) builds and installs your changes with the exact source on the target branch that passed the previous tests. This is done serially so your changes are the only changes since the last successful build. After the tests pass your pull request(s) (including prereqs in comments) are merged into master. Note: if you make changes to your pull request(s) after tests start, your merge will fail and the tests will be retried.
+ * If flake identification is enabled for a flag, failed jobs will require explanation from users. If a pull request has a failed job and no new code has been pushed, someone will have to link to a valid GitHub issue that explains a test flake causing that job to fail. Administrators can over-ride this system by re-triggering the job.
 
 ### Permissions
  * `[merge]` and `[test]` flags are only listened to for trusted users (in comments or titles) and are only supported for the configured branches.
  * Retries will automatically occur if a pull request is updated after a failure as long as the owner of the pull request is trusted.  So for example, if you tag a pull request with `[merge]` for a non trusted user, then they add code to the commit. It will fail on merge because they updated after the tests were started and will not retry until another `[merge]` tag is added/updated by a trusted user.  Trusted users are determined per test group and you can have multiple GitHub teams assigned to the same repo.
+ * Only administrators are allowed to override the flake identification feature. Adminstrators are not guaranteed to be trusted users, or vice versa.
 
 
 ## Setup

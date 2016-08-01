@@ -20,6 +20,8 @@ require 'pp'
 require 'net/https'
 require 'getoptlong'
 require 'time'
+require 'cgi'
+require 'json'
 
 def usage
   puts <<USAGE
@@ -121,6 +123,11 @@ ACTION_NOT_TEAM             = "#{ACTION_PREFIX} Please contact #{Properties['irc
 ACTION_UNSUPPORTED_BRANCH   = "#{ACTION_PREFIX} Only pull request(s) from #{$branches.pretty_inspect.chomp} are handled by the #{Properties['bot_github_user']}"
 NEEDS_REBASE_LABEL          = "needs-rebase"
 
+# flake_denied_prefix returns the prefix to be used for the flake info comment for a particular job
+def flake_denied_prefix(repo, job)
+  "The #{Properties['repo_to_product'][repo]} #{job} job could not be run again for this pull request."
+end
+
 GITHUB_API_BASE_URL = 'https://api.github.com'
 GITHUB_BASE_URL = 'https://github.com'
 
@@ -152,10 +159,50 @@ def submitted_tests_for_branch(branch)
   $submitted_tests[branch] ? $submitted_tests[branch] : $submitted_tests['*']
 end
 
+# We do not expect the groups used to define trusted and administrative
+# members for this repo to change often, so we will 'cache' the group ID
+# to GitHub name and URL for them in a file on disk.
+TEAM_CACHE_LOCATION = File.expand_path("~/.team_cache.json")
+$team_cache = if File.exists? TEAM_CACHE_LOCATION
+  JSON.parse(IO.read(TEAM_CACHE_LOCATION))
+else
+  {}
+end
+
 # Dynamically extend GitHubAPI to add methods that don't
 # require a local git project
 module Hub
   class GitHubAPI
+
+    # team_url_and_name returns the user-friendly URL and name for a GitHub team.
+    # If the team ID is found in the $team_cache, we will simply use it. If it
+    # is not, however, we will need to expend an API request to list all of the
+    # teams we care about and fill in the $team_cache before continuing.
+    def team_url_and_name(team_id)
+      # We want to return our cached data whenever we have it, but we also want
+      # to refresh our cache once in a while, so with a 1% chance we will ignore
+      # data in our cache and re-list anyway.
+      if !$team_cache.has_key?(team_id) || (rand(100) == 1)
+        res = get "#{GITHUB_API_BASE_URL}/orgs/#{Properties['github_user']}/teams"
+        if res.success?
+          res.data.each do |team_info|
+            # The GitHub team object doesn't list its own URL, but we can construct
+            # it using the 'slug' and the organization name
+            team_url = "#{GITHUB_BASE_URL}/orgs/#{Properties['github_user']}/teams/#{team_info['slug']}"
+            $team_cache[team_info['id']] = { 'url' => team_url, 'name' => team_info['name']}
+          end
+          # If we just filled out the cache, we should write it to disk so
+          # the next test-pull-requests run can save itself the API call
+          IO.write(TEAM_CACHE_LOCATION, JSON::JSON.pretty_generate($team_cache))
+          $stderr.puts "  Wrote a cache of team ID to URL and proper name at #{TEAM_CACHE_LOCATION}"
+        else
+          $stderr.puts res.body
+          res.error!
+        end
+      end
+      [$team_cache[team_id]['url'], $team_cache[team_id]['name']]
+    end
+
     def list_pull_requests(repo, num_tries=3)
       pull_requests = []
       page = 1
@@ -360,7 +407,7 @@ module Hub
             page += 1
             break
           end
-          res.error! if i == num_tries
+          res.error! if i == num_tries && res.code != 404
         end
       end
       labels
@@ -393,10 +440,21 @@ module Hub
       end
     end
 
-    # Verifies the user is part of a valid team
+    # user_trusted? determines if the user is part of a trusted team in the repository
     def user_trusted?(login, repo, settings)
+      user_in_group?(login, repo, settings, 'repo_to_teams')
+    end
+
+    # user_admin? determines if the user is part of a administrative team in the repository
+    def user_admin?(login, repo, settings)
+      user_in_group?(login, repo, settings, 'repo_to_admin_teams')
+    end
+
+    # user_in_group? determines if the user is part of a team in the repository, where
+    # the group of team members is specified by a group identifier
+    def user_in_group?(login, repo, settings, group_identifier)
       trusted = false
-      repo_setting_key = "#{repo}_#{settings['name']}"
+      repo_setting_key = "#{repo}_#{settings['name']}_#{group_identifier}"
       if $permissions[login]
         if $permissions[login][repo_setting_key]
           trusted = $permissions[login][repo_setting_key] ? true : false
@@ -405,7 +463,7 @@ module Hub
         $permissions[login] = {}
       end
       if $permissions[login][repo_setting_key].nil?
-        settings['repo_to_teams'][repo].each do |team|
+        settings[group_identifier][repo].each do |team|
           res = get "#{GITHUB_API_BASE_URL}/teams/#{team}/members/#{login}"
           trusted = res.success?
           break if trusted
@@ -679,14 +737,17 @@ popd
       return comment
     end
 
-    # get_comment_with_prefix returns a comment authored by the bot with the given prefix, if one exists
+    # get_comment_with_prefix returns a comment authored by the bot with the given prefix, if one exists.
+    # In order to ensure that we don't return a comment that starts with a longer prefix that aliases the
+    # prefix we're passed, the regex we use requires a word boundary anchor, whitespace character or line
+    # end at the end of the prefix we're passed.
     def get_comment_with_prefix(issue_id, repo, comment_prefix, comments=nil)
       prefix_comment = nil
 
       comments = comments ? comments : get_comments(issue_id, repo)
 
       comments.each do |comment|
-        if comment['body'] =~ /^#{comment_prefix} / && (comment['user']['login'] == Properties['bot_github_user'])
+        if comment['body'] =~ /^#{Regexp.quote(comment_prefix)}(\b|$|\s)/ && (comment['user']['login'] == Properties['bot_github_user'])
           prefix_comment = comment
           break
         end
@@ -763,8 +824,22 @@ popd
     end
 
     # get_trusted_trigger_time returns the time at which the last trusted user added a trigger,
-    # as best as we can tell. This will not always be able to determime the exact trigger time.
+    # as best as we can tell. This will not always be able to determine the exact trigger time.
     def get_trusted_trigger_time(pull_request, comments, settings)
+      trigger_time_for_user_in_group(pull_request, comments, settings, 'repo_to_teams')
+    end
+
+    # get_admin_trigger_time returns the time at which the last administrative user added a trigger,
+    # as best as we can tell. This will not always be able to determine the exact trigger time.
+    def get_admin_trigger_time(pull_request, comments, settings)
+      trigger_time_for_user_in_group(pull_request, comments, settings, 'repo_to_admin_teams')
+    end
+
+    # trigger_time_for_user_in_group returns the time at which the last trigger was added to the pull
+    # request by a user in the group identified with the group identifier. This function will return
+    # the time of the last trigger as best as we can tell, and will not always be able to determine
+    # the exact trigger time.
+    def trigger_time_for_user_in_group(pull_request, comments, settings, group_identifier)
       login = pull_request['user']['login']
       updated_at, _ = get_updated_at(pull_request, comments, settings)
       repo = pull_request['base']['repo']['name']
@@ -773,8 +848,8 @@ popd
       trigger_time = nil
       trigger_login = nil
       if pull_request['title'] =~ trigger_regex || pull_request['body'] =~ trigger_regex
-        if user_trusted?(login, repo, settings)
-          # Once we determine that the trusted user has a trigger statement in their pull
+        if user_in_group?(login, repo, settings, group_identifier)
+          # Once we determine that the grouped user has a trigger statement in their pull
           # request title or body, we need to determine what time we will claim the
           # trigger was added. We can't use the created_at time, since the user could
           # edit their title or body to add the trigger, and we can't use the updated_at
@@ -791,21 +866,21 @@ popd
 
       # Even if a trigger statement was found in the pull request body or title,
       # a more recent trigger could exist in the comments, and we want to ensure
-      # that we return the most recent trusted trigger time
+      # that we return the most recent trigger time
       comments.each do |comment|
         if comment['body'] =~ trigger_regex
           comment_login = comment['user']['login']
-          if user_trusted?(comment_login, repo, settings)
+          if user_in_group?(comment_login, repo, settings, group_identifier)
             trigger_comment_updated_at = Time.parse(comment['updated_at'])
-            # If we find a trigger phrase from a trusted user in a comment, we will use
+            # If we find a trigger phrase from a grouped user in a comment, we will use
             # the time that their comment was made as the trigger time if and only if
-            # the trusted user posted their trigger phrase after the last commit was
-            # created, ensuring that the trusted user has signed off on all of the
-            # commits to be tested
-            if user_trusted?(login, repo, settings) || trigger_comment_updated_at > updated_at
-              # Furthermore, we only want to update the trusted trigger time if
-              # we have a more recent time from the trusted user's comment than
-              # the time we got by investigating the pull request body and title
+            # the user posted their trigger phrase after the last commit was created,
+            # ensuring that the grouped user has signed off on all of the commits to be
+            # tested
+            if user_in_group?(login, repo, settings, group_identifier) || trigger_comment_updated_at > updated_at
+              # Furthermore, we only want to update the trigger time if we have a more
+              # recent time from the grouped user's comment than the time we got by
+              # investigating the pull request body and title
               if !trigger_time || trigger_comment_updated_at > trigger_time
                 trigger_time = trigger_comment_updated_at
                 trigger_login = comment_login
@@ -938,6 +1013,143 @@ popd
         $stderr.puts "  #{comment}"
         add_comment(base_pull_id, base_repo, comment) unless get_comment_with_value(base_pull_id, base_repo, comment, comments)
       end
+    end
+
+    # comments_after returns all of the comments in the given list that were updated
+    # after the given time
+    def comments_after(comments, time)
+      valid_comments = []
+      comments.each do |comment|
+        if Time.parse(comment['updated_at']) > time
+          valid_comments << comment
+        end
+      end
+
+      valid_comments
+    end
+
+    # has_valid_flake_comment? determines if a valid flake explanation comment exists
+    #
+    # A flake comment is valid iff at least one given issue link in the comment:
+    #    - resides in the correct repository
+    #    - points to issues with the correct label
+    def has_valid_flake_comment?(comments, flake_config)
+      general_issue_spec = /(https?:\/\/github.com\/.*\/issues\/[0-9]+)/
+      general_ref_spec = /(^|\s)#(\d+)/
+
+      $stderr.puts "  Searching comments for a flake identification comment..."
+      comments.each do |comment|
+        body = comment['body']
+
+        # we want to allow users to link to issues using full URLs or the
+        # short-hand #1234 GitHub issue references
+        comment_contains_issue = body =~ general_issue_spec || body =~ general_ref_spec
+        # we can't allow the bot to be a valid author, or we would pick up
+        # comments where the bot explains the flake syntax to GitHub users
+        comment_author_valid = comment['user']['login'] != Properties['bot_github_user']
+
+        if comment_contains_issue && comment_author_valid
+          $stderr.puts "  Investigating comment by #{comment['user']['login']}: #{comment['html_url']}"
+          has_valid_issue_link = has_valid_issue_link?(body, general_issue_spec, Properties['github_user'], flake_config)
+          has_valid_issue_ref = has_valid_issue_ref?(body, general_ref_spec, flake_config)
+
+          return true if has_valid_issue_ref || has_valid_issue_link
+        end
+      end
+
+      return false
+    end
+
+    # has_valid_issue_link? validates that the comment's issue list contains
+    # at least one valid flake issue.
+    # We need to validate that the links we found with the general spec are
+    # from the correct organization/owner and in the correct repository
+    def has_valid_issue_link?(body, general_issue_spec, org, flake_config)
+      body.scan(general_issue_spec) do |issue|
+        $stderr.puts "      Determining if issue #{issue[0]} meets criteria..."
+        if issue[0] =~ /https?:\/\/github.com\/#{Regexp.quote(org)}\/#{Regexp.quote(flake_config['repo'])}\/issues\/([0-9]+)/
+          issue_id = $1.to_i
+          if issue_has_label?(issue_id, flake_config['repo'], flake_config['label'])
+            $stderr.puts "      Issue #{issue[0]} is a valid flake issue"
+            return true
+          end
+        end
+      end
+
+      return false
+    end
+
+    # has_valid_issue_ref? validates that the comment's ref list contains
+    # at least one valid flake reference.
+    # GitHub issue references will always link to the same org/repo that
+    # the comment containing the reference is posted in, so we only need
+    # to validate that the ref is to an issue with the correct label
+    def has_valid_issue_ref?(body, general_ref_spec, flake_config)
+      body.scan(general_ref_spec) do |reference|
+        $stderr.puts "      Determining if reference ##{reference[1]} meets criteria..."
+        issue_id = reference[1].to_i
+        if issue_has_label?(issue_id, flake_config['repo'], flake_config['label'])
+          $stderr.puts "      Reference ##{reference[1]} points to a valid flake issue"
+          return true
+        end
+      end
+
+      return false
+    end
+
+    # issue_has_label? determines if the issue at the
+    # repo and issue ID has a label with the given name
+    def issue_has_label?(issue_id, repo, label_name)
+      get_labels(issue_id, repo).each do |label|
+        if label["name"] == label_name
+          return true
+        end
+      end
+      return false
+    end
+
+    # format_teams builds a list of links to team rosters from a list of team IDs
+    def format_teams(team_ids)
+      links = []
+      team_ids.each do |id|
+        url, name = team_url_and_name(id)
+        links << "[#{name}](#{url})"
+      end
+      if links.length == 1
+        "the #{links[0]} group"
+      elsif links.length == 2
+        "the #{links[0]} or #{links[1]} groups"
+      else
+        "the #{links[0..-1].join(", ")} or #{links[-1]} groups"
+      end
+    end
+
+    # format_flake_comment builds a comment explaining why a re-build could not be triggered
+    def format_flake_comment(prefix, flake_config, team_ids)
+      flake_label = flake_config['label']
+      flake_repo = flake_config['repo']
+      org_repo = "#{Properties['github_user']}/#{flake_repo}"
+      flake_label_query = CGI.escape("label:#{flake_label}")
+      issue_link = "https://github.com/#{org_repo}/issues?q=#{flake_label_query}"
+      new_issue_link = "https://github.com/#{org_repo}/issues/new"
+
+      "
+#{prefix}
+ - If the proposed changes in this pull request caused the job to fail, update this pull request with new code to fix the issue(s).
+ - If flaky tests caused the job to fail, leave a comment with links to the GitHub issue(s) in the `#{org_repo}` repository with the [`#{flake_label}` label](#{issue_link}) that are tracking the flakes. If no issue already exists for the flake you encountered, [create one](#{new_issue_link}).
+ - If something else like CI system downtime or maintenance caused the job to fail, contact a member of #{format_teams(team_ids)} to trigger the job again.
+      "
+    end
+
+    # format_flake_satisfaction_message builds a formatted message for logging that explains
+    # why the flake identification criteria were satisfied
+    def format_flake_satisfaction_message(explanatory_comment_valid, admin_trigger_valid, changed_after_eval)
+      reasons = []
+      reasons << "valid identification comment found" if explanatory_comment_valid
+      reasons << "administrative trigger found" if admin_trigger_valid
+      reasons << "new changes found" if changed_after_eval
+
+      "  Flake identification satisfied: #{reasons.join(", ")}, resubmitting..."
     end
 
     #
@@ -1083,7 +1295,6 @@ popd
           #  - loop back into this state if the tests are still running
           #  - into the appropriate post-build state, of which I know of:
           #    - SUCCESS
-          #    - FAILURE
           #    - ABORTED
           #    - UNSTABLE
           #    - NOTFOUND
@@ -1103,13 +1314,83 @@ popd
             updated_comment += extended_tests if extended_tests
             status = result == 'SUCCESS' ? 'success' : 'failure'
           end
+        when /^#{settings['test_prefix']} FAILURE \(([^\)]*)\)?/
+          # In this case, are in the post-test result state, and the tests have failed
+          #
+          # The two states that we can transition to from here are:
+          #  - loop back into this state if:
+          #      - flake enforcement is configured and
+          #      - there is no comment linking a valid flake issue to the last failed
+          #        job and
+          #      - the is no administrative trigger, overriding the check and
+          #      - the base branch of the pull request has not been updated from the
+          #        version used to run the tests previous ly
+          #  - into the testing state if either:
+          #      - flake enforcement is not configured, or
+          #      - a contributor has linked the failure to a flake issue, or
+          #      - an administrator has overriden the check, or
+          #      - new code has been pushed to the branch since the last time this bot
+          #        evaluated the pull request
+          $stderr.puts "  Job failed: #{comment}"
+
+          flake_config = settings['flake_identification']
+          if !flake_config
+            # If no flake configuration exists, it's ok to re-submit the job whenever
+            # a new trigger is added to the pull request
+            $stderr.puts "  No flake identification configuration exists, resubmitting..."
+            resubmit_test_job = true
+          else
+            # If flake configuration does exist, we have to determine if we are OK to
+            # re-submit or not
+
+            # We can capture the URL of the failed build from the regex match
+            build_url=$1
+            $stderr.puts "  Determining if flakes have been identified for failed job: #{build_url}"
+
+            admin_trigger_updated_at, _ = get_admin_trigger_time(req, comments, settings)
+            admin_trigger_valid = admin_trigger_updated_at && admin_trigger_updated_at > updated_at
+            if !admin_trigger_valid && !changed_after_eval
+              # if there is nothing else that is going to re-trigger this job, we
+              # look to find an explanatory comment. This is a costly process in
+              # terms of API calls, so we only do it if we need to.
+              explanatory_comment_valid = has_valid_flake_comment?(comments_after(comments, comment_updated_at), flake_config)
+            else
+              explanatory_comment_valid = false
+            end
+
+            flake_comment_prefix = flake_denied_prefix(base_repo, settings['name'])
+            flake_comment_body = format_flake_comment(flake_comment_prefix, flake_config, settings['repo_to_admin_teams'][base_repo])
+
+            # If we can find an explanatory comment with a valid flake issue in it,
+            # or we find an admin override comment, or the pull request has had new
+            # code added to it since the last evaluation, we know that we are good
+            # to resubmit the pull request for testing
+            if explanatory_comment_valid || admin_trigger_valid || changed_after_eval
+              $stderr.puts format_flake_satisfaction_message(explanatory_comment_valid, admin_trigger_valid, changed_after_eval)
+              resubmit_test_job = true
+              delete_comment_with_prefix(id, base_repo, flake_comment_prefix, comments)
+            else
+              $stderr.puts "  Flake identification not satisfied"
+              if trigger_updated_at && trigger_updated_at > evaluated_time
+                # If someone's tried to trigger a re-test, but we can't re-test right
+                # now, we should leave a helpful message explaining why. If we have
+                # previously warned the user about why we couldn't re-test, we should
+                # only update the pull request with a new set of reasons if the trigger
+                # is newer than our last comment
+                previous_warning = get_comment_with_prefix(id, base_repo, flake_comment_prefix, comments)
+                if !previous_warning || (previous_warning && trigger_updated_at > Time.parse(previous_warning['updated_at']))
+                  $stderr.puts "    New reminder comment is appropriate for this pull request"
+                  recreate_comment_with_prefix(id, base_repo, flake_comment_prefix, flake_comment_body, comments)
+                end
+              end
+            end
+          end
         else
           # In this case, we're in one of three states:
           #  1) ACTION_NOT_MERGE: the pull request is not mergeable and needs a rebase
           #  2) ACTION_NOT_TEAM: the pull request has no trusted triggers
           #  3) the build has finished, with one of the following states:
           #    - SUCCESS
-          #    - FAILURE
           #    - ABORTED
           #    - UNSTABLE
           #    - NOTFOUND
@@ -1664,3 +1945,4 @@ else
   @api_client.process_pull_requests(merge_pretest_success)
   $stderr.puts "\nDone\n"
 end
+
