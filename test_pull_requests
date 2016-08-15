@@ -275,7 +275,12 @@ module Hub
     def delete_comment(comment_id, repo, num_tries=3)
       $stderr.puts "  Deleting comment ##{comment_id}"
       (1..num_tries).each do |i|
-        res = delete "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id]
+        begin
+          res = delete "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/issues/comments/%s" % [comment_id]
+        rescue Net::HTTPNotFound => e
+          # If we get 404 on a retry, that means there's no comment to delete
+          break if i > 1
+        end
         break if res.success?
         res.error! if i == num_tries
       end
