@@ -473,7 +473,7 @@ module Hub
     def submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
       submitted_tests = submitted_tests_for_branch(branch)
       unless settings['allow_multiple']
-        if submitted_tests[settings['name']] #|| JenkinsAPI.is_previous_build_running?(branch, settings)
+        if submitted_tests[settings['name']] || JenkinsAPI.previous_build_running?(branch, settings, base_repo)
           submitted_tests[settings['name']] = true
           $stderr.puts "  Waiting for existing build to finish"
           return
@@ -1216,7 +1216,7 @@ popd
           #    commits in the main pull request and any co-requisites
           $stderr.puts "  Evaluating..."
 
-          if JenkinsAPI.is_project_stable?(branch, settings)
+          if JenkinsAPI.project_stable?(branch, settings)
             # Make sure there is a trigger in place that is still later than the updated dates of each of the pull requests
             if trigger_updated_at
               repo_to_pull_request.each do |repo, pull_request|
@@ -1257,7 +1257,7 @@ popd
           # and we need to reconsider why they're tolerated
           $stderr.puts "  Waiting..."
           # Only submit the tests if the project is stable
-          if JenkinsAPI.is_project_stable?(branch, settings)
+          if JenkinsAPI.project_stable?(branch, settings)
             submitted_tests = submitted_tests_for_branch(branch)
             if !(submitted_tests[settings['name']] && comment =~ /^#{settings['test_prefix']} Waiting: You are in the build queue at position: \d+/)
               $stderr.puts "  Checking that evaluated times are still up to date"
@@ -1301,11 +1301,11 @@ popd
           $stderr.puts "  Running: #{build_url}consoleFull"
 
           # If the build is finished, update with the results
-          if JenkinsAPI.is_build_running?(build_url, branch, settings)
+          if JenkinsAPI.build_running?(build_url, branch, settings)
             submitted_tests = submitted_tests_for_branch(branch)
             submitted_tests[settings['name']] = true unless settings['allow_multiple']
           else
-            result = JenkinsAPI.get_build_result(build_url, branch, settings)
+            result = JenkinsAPI.build_result(build_url, branch, settings)
             updated_comment = "#{settings['test_prefix']} #{result} (#{build_url})"
             updated_comment += extended_tests if extended_tests
             status = result == 'SUCCESS' ? 'success' : 'failure'
@@ -1416,7 +1416,7 @@ popd
           if trigger_updated_at
             # We already trust the primary pull request.  Just need to check whether the eval time is older than last update or last trusted trigger.
             if changed_after_eval || (evaluated_time < trigger_updated_at)
-              if JenkinsAPI.is_project_stable?(branch, settings)
+              if JenkinsAPI.project_stable?(branch, settings)
                 submit_test_job = true
               else
                 updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
@@ -1440,7 +1440,7 @@ popd
               $stderr.puts "  Has valid trigger comment: #{valid_trigger_comment}"
               if valid_trigger_comment || user_trusted?(sub_pull_request['user']['login'], repo, settings)
                 if sub_pull_request_changed_after_eval
-                  if JenkinsAPI.is_project_stable?(branch, settings)
+                  if JenkinsAPI.project_stable?(branch, settings)
                     submit_test_job = true
                   else
                     updated_comment = "#{settings['test_prefix']} Waiting for stable build of '#{branch_settings(branch, settings)['downstream_job_name']}'"
@@ -1690,18 +1690,16 @@ popd
       $branches.each do |branch|
         skipped_count[branch] = {}
       end
+
+      # If we're only allowing sequential tests in this tag, we want to find
+      # any pull request in the 'running tests' state and signal that there
+      # is a test running.
       sorted_pull_requests.each do |req_info|
-        # Process the pull request
         req = req_info[0]
-        updated_at = req_info[1]
-        changed_after_eval = req_info[2]
         comments = req_info[3]
         settings = req_info[4]
         branch = req['base']['ref']
 
-        # If we're only allowing sequential tests in this tag, we want to find
-        # any pull request in the 'running tests' state and signal that there
-        # is a test running
         if !settings['allow_multiple']
           comments.each do |comment|
             if (comment['user']['login'] == Properties['bot_github_user']) && (comment['body'] =~ /^#{settings['test_prefix']} Running \(([^\)]+)\)/)
@@ -1711,6 +1709,16 @@ popd
             end
           end
         end
+      end
+
+      sorted_pull_requests.each do |req_info|
+        # Process the pull request
+        req = req_info[0]
+        updated_at = req_info[1]
+        changed_after_eval = req_info[2]
+        comments = req_info[3]
+        settings = req_info[4]
+        branch = req['base']['ref']
 
         process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
 
@@ -1745,29 +1753,6 @@ popd
   # A class to encapsulate the Jenkins API interaction
   #
   class JenkinsAPI
-    def self.downstream_job_uri(branch, settings)
-      job_name = branch_settings(branch, settings)['downstream_job_name']
-      URI("#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/api/json")
-    end
-
-    def self.job_uri(branch, settings)
-      job_name = branch_settings(branch, settings)['jenkins_job_name']
-      URI("#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/api/json")
-    end
-
-    def self.get_session(branch, settings)
-      proxy = Net::HTTP::Proxy(Properties['proxy_host'], Properties['proxy_port'])
-      uri = nil
-      if branch_settings(branch, settings)['downstream_job_name']
-        uri = downstream_job_uri(branch, settings)
-      else
-        uri = job_uri(branch, settings)
-      end
-      session = proxy.new(uri.host, uri.port)
-      session.use_ssl = true
-      session.verify_mode = OpenSSL::SSL::VERIFY_NONE
-      return session
-    end
 
     def self.submit_jenkins_job(repo_to_pull_request, branch, extended_tests, settings)
       # First, get the next jenkins build number
@@ -1791,7 +1776,7 @@ popd
       if first_valid_repo
         addtl_jenkins_params = branch_settings(branch, settings)['addtl_jenkins_params']
         addtl_jenkins_params[Properties['repo_groups'][first_valid_repo]].each do |key, value|
-          value.gsub!('*', branch) if value.is_a? String
+          value = replace_wildcard(value, branch)
           pull_id_params += "&#{key}=#{value}"
         end if addtl_jenkins_params
       end
@@ -1800,8 +1785,7 @@ popd
 
       # Now submit the Jenkins job
       get_session(branch, settings).start do |http|
-        request = Net::HTTP::Get.new build_uri.request_uri
-        response = http.request request
+        response = http_get(http, build_uri)
         if (response.kind_of? Net::HTTPFound) || (response.kind_of? Net::HTTPCreated)
           $stderr.puts "  Successfully submitted job for pull request"
 
@@ -1828,12 +1812,11 @@ popd
       end
     end
 
-    def self.is_project_stable?(branch, settings)
+    def self.project_stable?(branch, settings)
       if branch_settings(branch, settings)['downstream_job_name'] && branch_settings(branch, settings)['require_downstream_stability']
         get_session(branch, settings).start do |http|
-          uri = downstream_job_uri(branch, settings)
-          request = Net::HTTP::Get.new uri.request_uri
-          response = http.request request
+          url = downstream_job_url(branch, settings)
+          response = http_get(http, url)
           if response.kind_of? Net::HTTPSuccess
             result = JSON.parse(response.body)["result"]
             return  result == "SUCCESS" || result == "UNSTABLE"
@@ -1848,10 +1831,9 @@ popd
 
     def self.get_next_build(branch, settings, job_name=nil)
       job_name = job_name ? job_name : branch_settings(branch, settings)['jenkins_job_name']
-      job_api_uri = URI("#{Properties['jenkins_url']}job/#{job_name}/api/json")
+      job_api_url = "#{Properties['jenkins_url']}job/#{job_name}"
       get_session(branch, settings).start do |http|
-        request = Net::HTTP::Get.new job_api_uri.request_uri
-        response = http.request request
+        response = http_get(http, job_api_url)
         if response.kind_of? Net::HTTPSuccess
           JSON.parse(response.body)["nextBuildNumber"].to_i
         else
@@ -1860,30 +1842,46 @@ popd
       end
     end
 
-    def self.to_api_url build_url
-      URI(build_url + "/api/json")
-    end
-
-    def self.is_previous_build_running?(branch, settings)
-      build_num = get_next_build(branch, settings) - 1
-      build_url = Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + "/#{build_num}/"
+    def self.previous_build_running?(branch, settings, repo)
+      $stderr.puts "  Checking for existing build of the same type running in Jenkins"
+      addtl_jenkins_params = branch_settings(branch, settings)['addtl_jenkins_params']
+      previous_running = false
       get_session(branch, settings).start do |http|
-        request = Net::HTTP::Get.new to_api_url(build_url).request_uri
-        response = http.request request
+        build_uri = URI(Properties['jenkins_url'] + 'job/' + branch_settings(branch, settings)['jenkins_job_name'] + '/api/json?tree=builds[building,actions[parameters[name,value]]]')
+        response = http_get(http, build_uri)
         if response.kind_of? Net::HTTPSuccess
-          return JSON.parse(response.body)["building"]
+          output = JSON.parse(response.body)
+          output['builds'].each do |build|
+            previous_running = build['building']
+            if previous_running
+              actions = build['actions']
+              submitted_params = nil
+              actions.each do |action|
+                if action['_class'] == 'hudson.model.ParametersAction'
+                  submitted_params = action['parameters']
+                  break
+                end
+              end
+              # Validate that the params match between the test settings and jenkins for cases that the same job is being used for multiple test commands
+              if submitted_params && addtl_jenkins_params && addtl_jenkins_params[Properties['repo_groups'][repo]]
+                previous_running = submitted_params_match?(submitted_params, addtl_jenkins_params[Properties['repo_groups'][repo]], branch)
+              end
+              # Exit if you found a match.  Otherwise keep looking.
+              break if previous_running
+            end
+          end
         elsif response.kind_of? Net::HTTPNotFound
-          return false # maybe someone deleted the last build?
+          raise "Jenkins status url not found: #{build_uri.request_uri}"
         else
-          return true # assume it's running to avoid errors causing multiple builds to start
+          raise "Jenkins status url returned an invalid result: #{build_uri.request_uri}"
         end
       end
+      return previous_running
     end
 
-    def self.is_build_running?(build_url, branch, settings)
+    def self.build_running?(build_url, branch, settings)
       get_session(branch, settings).start do |http|
-        request = Net::HTTP::Get.new to_api_url(build_url).request_uri
-        response = http.request request
+        response = http_get(http, build_url)
         if response.kind_of? Net::HTTPSuccess
           return JSON.parse(response.body)["building"]
         elsif response.kind_of? Net::HTTPNotFound
@@ -1894,13 +1892,12 @@ popd
       end
     end
 
-    def self.get_build_result(build_url, branch, settings)
+    def self.build_result(build_url, branch, settings)
       get_session(branch, settings).start do |http|
-        request = Net::HTTP::Get.new to_api_url(build_url).request_uri
-        response = http.request request
+        response = http_get(http, build_url)
         if response.kind_of? Net::HTTPSuccess
-          job = JSON.parse(response.body)
-          return job["result"]
+          build = JSON.parse(response.body)
+          return build["result"]
         elsif response.kind_of? Net::HTTPNotFound
           return "NOTFOUND"
         else
@@ -1908,6 +1905,65 @@ popd
         end
       end
     end
+
+    private
+
+    def self.submitted_params_match?(submitted_params, test_params, branch)
+      submitted_param_map = {}
+      submitted_params.each do |param|
+        submitted_param_map[param['name']] = param['value']
+      end
+      test_params.each do |key, value|
+        value = replace_wildcard(value, branch)
+        submitted_value = submitted_param_map[key]
+        if !submitted_value.nil? && submitted_value != value
+          $stderr.puts "    #{submitted_value} != #{value} for '#{key}' param"
+          return false
+        end
+      end
+      return true
+    end
+
+    def self.http_get(http, uri)
+      uri = to_api_uri(uri) if uri.is_a? String
+      request = Net::HTTP::Get.new uri.request_uri
+      http.request request
+    end
+
+    def self.replace_wildcard(s, replacement)
+      s = s.gsub('*', replacement) if s.is_a? String
+      s
+    end
+
+    def self.to_api_uri url
+      URI(url + "/api/json")
+    end
+
+    def self.downstream_job_url(branch, settings)
+      job_name = branch_settings(branch, settings)['downstream_job_name']
+      "#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild"
+    end
+
+    def self.job_url(branch, settings)
+      job_name = branch_settings(branch, settings)['jenkins_job_name']
+      "#{Properties['jenkins_url']}job/#{job_name}/lastCompletedBuild/"
+    end
+
+    def self.get_session(branch, settings)
+      proxy = Net::HTTP::Proxy(Properties['proxy_host'], Properties['proxy_port'])
+      url = nil
+      if branch_settings(branch, settings)['downstream_job_name']
+        url = downstream_job_url(branch, settings)
+      else
+        url = job_url(branch, settings)
+      end
+      uri = to_api_uri(url)
+      session = proxy.new(uri.host, uri.port)
+      session.use_ssl = true
+      session.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      return session
+    end
+
   end
 end
 
