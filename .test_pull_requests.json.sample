@@ -50,9 +50,21 @@
           "444444"
         ]
       },
+      "repo_to_admin_teams": {
+        "myrepo1": [
+          "111111"
+        ],
+        "myrepo2": [
+          "111111"
+        ]
+      },
       "repo_to_pull_id_param": {
         "myrepo1": "MYREPO1_PULL_ID",
         "myrepo2": "MYREPO2_PULL_ID"
+      },
+      "flake_identification": {
+        "repo": "myrepo1",
+        "label": "kind/test-flake"
       }
     },
     "merge_test_settings": {
@@ -85,9 +97,21 @@
           "111111"
         ]
       },
+      "repo_to_admin_teams": {
+        "myrepo1": [
+          "111111"
+        ],
+        "myrepo2": [
+          "111111"
+        ]
+      },
       "repo_to_pull_id_param": {
         "myrepo1": "MYREPO1_PULL_ID",
         "myrepo2": "MYREPO2_PULL_ID"
+      },
+      "flake_identification": {
+        "repo": "myrepo1",
+        "label": "kind/test-flake"
       }
     }
   }
