@@ -470,7 +470,7 @@ module Hub
     end
 
     # Submit tests to Jenkins and update the comment
-    def submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
+    def submit_tests(repo_to_pull_request, base_repo, branch, pull_id, comment_id, extended_tests, settings)
       submitted_tests = submitted_tests_for_branch(branch)
       unless settings['allow_multiple']
         if submitted_tests[settings['name']] || JenkinsAPI.previous_build_running?(branch, settings, base_repo)
@@ -487,7 +487,7 @@ module Hub
       running_comment += " (Extended Tests: #{extended_tests.join(', ')})" unless extended_tests.empty?
 
       # Update the comments to reflect the new tests running
-      update_comment(comment_id, base_repo, running_comment)
+      recreate_comment(pull_id, comment_id, base_repo, running_comment)
 
       repo_to_pull_request.each do |repo, pull_request|
         if repo != base_repo
@@ -1467,7 +1467,7 @@ popd
         if submit_test_job
           delete_comment_with_prefix(id, base_repo, ACTION_PREFIX, comments)
           extended_tests = get_extended_tests(req, comments, branch, settings)
-          submit_tests(repo_to_pull_request, base_repo, branch, comment_id, extended_tests, settings)
+          submit_tests(repo_to_pull_request, base_repo, branch, id, comment_id, extended_tests, settings)
         elsif updated_comment
           # If we have an `updated_comment`, we have determined which state we want to
           # transition into above literally and simply need to update the comment to
