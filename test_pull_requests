@@ -1555,7 +1555,7 @@ popd
         # anyway to ensure that the UX for PRs is good. Since we do *not* have the labels for
         # a PR, this is a costly operation, so we do not attempt to do it always, only when we
         # know for sure we need to, or once in a while randomly.
-        if delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments) || (rand(10) < 1)
+        if delete_comment_with_prefix(id, repo, ACTION_NOT_MERGE, comments) || (rand(5) < 1)
           remove_labels(id, repo, [NEEDS_REBASE_LABEL])
         end
       else
@@ -1612,7 +1612,7 @@ popd
             # don't need to. Also, just to ensure that we don't forget a pull
             # request forever on accident, there is a 10% chance we'll consider
             # a pull request even if it is inactive
-            if Time.now - Time.parse(req['updated_at']) < (12*60*60) || (rand(10) < 1)
+            if Time.now - Time.parse(req['updated_at']) < (12*60*60) || (rand(20) < 1)
               login = req['user']['login']
               comments = nil
               # Skip if it's not mergeable
