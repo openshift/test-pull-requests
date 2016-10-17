@@ -1,0 +1,21 @@
+{
+    "repo_groups": {
+        "enterprise": {
+            "merge_queue_name": "Fantastic Project - Enterprise"
+        },
+        "hosted": {
+            "merge_queue_name": "Fantastic Project - Hosted"
+        }
+    },
+    "repos_to_groups": {
+        "repo1": "enterprise",
+        "repoXYZ": "enterprise",
+        "repo2": "hosted",
+        "repoIJK": "hosted"
+    },
+    "merge_queue_properties_location": "~/.test_pull_requests.json",
+    "merge_queue_name": "Fantastic Project",
+    "output_directory": "/var/www/html/merge_queue",
+    "template_directory": "~/templates",
+    "logo_url": "https://yourhost.example.com/path/to/your/logo.png"
+}

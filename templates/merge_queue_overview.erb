@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title><%= queue_name %> Merge Queue Overview</title>
+<script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jquery/1.8.1/jquery.min.js?ver=3.8.1'></script>
+<link href="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css" rel="stylesheet" media="screen">
+<script src="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+<link href='https://fonts.googleapis.com/css?family=Open+Sans:400,300,600,800,700' rel='stylesheet' type='text/css'>
+<link href="assets/merge_queue_overview.css" rel="stylesheet" type="text/css">
+<link rel="icon" href="assets/favicon32x32.png" type="image/png" />
+<meta name="viewport" content="width=device-width">
+<style type="text/css">
+
+.table>tbody>tr.in-progress>th {
+  background-color: #94cc75;
+  border-top: 1px solid #94cc75;
+}
+.table>tbody>tr.next>th {
+  background-color: #c4e3b3;
+  border-top: 1px solid #c4e3b3;
+}
+.table>tbody>tr.backlog>th {
+  background-color: #dbedfe;
+  border-top: 1px solid #dbedfe;
+}
+.table.table-rows>tbody>tr>th,
+.table.table-rows>tbody>tr>td {
+  padding: 15px;
+}
+
+
+</style>
+
+</head>
+
+<body>
+  <div class="navbar navbar-default navbar-fixed-top" role="navigation">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <div class="brand" style="background: transparent url('<%=config['logo_url']%>') no-repeat left -5px; background-size: 200px auto">
+          </div>
+        </div>
+      </div>
+    </div>
+
+  <div class="container">
+
+    <h2 class="visible-xs"><%= queue_name %> Merge Queue Overview</h2>
+
+<div class="container">
+<%
+  if queue_records['enqueued'] or queue_records['running']
+%>
+<div class="table-responsive">
+<table class="table table-normal table-condensed">
+  <tr><th>Running</th></tr>
+<%
+    if queue_records['running'] && !queue_records['running'].empty?
+      queue_records['running'].each do |pr_link, pr_data|
+%>
+  <tr>
+  <td><a href='<%=pr_link%>'><%=pr_data['title']%></a></td>
+  </tr>
+<%
+      end
+    else
+%>
+  <tr>
+  <td>Waiting for existing build to finish...</td>
+  </tr>
+<%
+    end
+%>
+</table>
+<%
+    if queue_records['enqueued'] && !queue_records['enqueued'].empty?
+%>
+<table class="table table-normal table-condensed">
+  <tr><th colspan="2">Waiting</th></tr>
+<%
+      queue_records['enqueued'].sort_by{ |pr,pd| pd['queue_pos'] || ((pd['status'] == 'merging') ? 0 : 9999) }.each do |pr_link, pr_data|
+        if pr_data['title'] && pr_data['status'] != 'merging'
+%>
+<tr>
+<td><%=pr_data['queue_pos'] || pr_data['status']%></td>
+<td><a href='<%=pr_link%>'><%=pr_data['title']%></a></td>
+</tr>
+<%
+        end
+      end
+%>
+</table>
+<%
+    end
+%>
+<br/><br/>
+<%
+  end
+%>
+<p>
+Missing something? Check to see if your PR was already merged:
+<ul>
+<%
+  queue_records['closed_prs'].each do |repo, link|
+%>
+<li><a href="<%=link%>"><%=repo%></a></li>
+<%
+  end
+%>
+</ul>
+</p>
+<hr/>
+<p>
+<a href="./">Browse all Merge Queues</a>
+</p>
+</div>
+</div>
+  </div><!-- /container -->
+</body>
+</html>

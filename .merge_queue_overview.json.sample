@@ -1,0 +1,7 @@
+{
+    "merge_queue_properties_location": "~/.test_pull_requests.json",
+    "merge_queue_name": "Fantastic Project",
+    "output_directory": "/var/www/html/merge_queue",
+    "template_directory": "~/templates",
+    "logo_url": "https://yourhost.example.com/path/to/your/logo.png"
+}

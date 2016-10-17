@@ -53,6 +53,26 @@ Utility for serially testing and merging pull requests in conjunction with Jenki
 
  * Run `test_pull_requests` as a Jenkins or `cron` job.  Note that GitHub is rate limited but typical projects can still run this script every few mins without running out of requests.
 
+### Setup for merge_queue_overview
+ * Add `merge_queue_overview` to your Jenkins system and make sure it's executable
+ * Add `.merge_queue_overview.json` to `$JENKINS_HOME`
+ * Create the `merge_queue_records` directory under `$JENKINS_HOME` and make sure the `jenkins` user can write to it.
+ * Create the `templates` directory - e.g. under `$JENKINS_HOME` - and make sure the `jenkins` user can read it.
+   * Copy the content of the `templates` repo directory here
+ * Create the output directory for the generated HTML - e.g. `/var/www/html/merge_queue/` - and make sure the `jenkins` user can write to it.
+   * Create the `assets` directory under the output directory and copy the contents of the `assets` directory in the repo to it.
+ * Configure `.merge_queue_overview.json` for your system. You need to speciffy:
+   * `merge_queue_properties_location`: The location of the corresponding `test_pull_requests.json`
+   * `merge_queue_name`: A friendly name for the merge queue, to be displayed in the page title and elsewhere
+   * `logo_url`: The URL where the appropriate logo can be loaded
+   * `output_directory`: The directory for the generated HTML
+   * `template_directory`: The directory you copied the ERB templates into
+ * Run `merge_queue_overview` in your Jenkins or `cron` job after a successful `test_pull_requests` run, like:
+```
+  merge_queue_overview --config ~/.merge_queue_overview.json > \
+    /var/www/html/merge_queue/test_pull_requests.html
+```
+
 Copyright
 ----------------------
 
