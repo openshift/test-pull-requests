@@ -381,7 +381,7 @@ module Hub
           res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/pulls?page=#{page}&per_page=100"
           rate_limit_remaining = res.header['X-RateLimit-Remaining']
           $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
-          if rate_limit_remaining && rate_limit_remaining.to_i < 500
+          if rate_limit_remaining && rate_limit_remaining.to_i < 1000
             $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
             exit 0
           end
