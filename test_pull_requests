@@ -1402,6 +1402,11 @@ popd
         end
       end
       return false
+    rescue => e
+      # Something went wrong but as far as we are
+      # concerned, this issue does not have the label
+      $stderr.puts "      [e.class] #{e.message}"
+      return false
     end
 
     # format_teams builds a list of links to team rosters from a list of team IDs
