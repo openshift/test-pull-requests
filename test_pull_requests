@@ -93,6 +93,9 @@ else
   exit 255
 end
 
+MERGE_QUEUE_RECORD_FILENAME = PROPERTIES_LOCATION[/[^\w]+\.(.+\.json)/, 1]
+MERGE_QUEUE_RECORD = File.expand_path("~/merge_queue_records/#{MERGE_QUEUE_RECORD_FILENAME}")
+
 # Branches and repos must be supported for all settings
 $branches = []
 $repos = []
@@ -1905,8 +1908,10 @@ popd
     def process_pull_requests(merge_pretest_success)
       pull_requests = []
       mergeability_in_flux = false
+      pull_request_statuses = Hash.new { |h,k| h[k] = Hash.new { |h2,k2| h2[k2] = {} } }
       $repo_to_pull_regex.keys.each do |repo|
         $stderr.puts "\nProcessing repo '#{repo}'"
+        pull_request_statuses[:closed_prs][repo] = "#{GITHUB_BASE_URL}/#{Properties['github_user']}/#{repo}/pulls?q=is%3Apr+is%3Aclosed"
         list_pull_requests(repo).each do |req|
           id = req['number']
           $stderr.puts "Analyzing pull request: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{repo}/pull/#{id}"
@@ -2034,6 +2039,7 @@ popd
         comments = req_info[3]
         settings = req_info[4]
         branch = req['base']['ref']
+        repo = req['base']['repo']['name']
 
         process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
 
@@ -2043,9 +2049,9 @@ popd
           # If we're only allowing sequential tests on this tag and there is a test running,
           # and we are waiting to test, we need to correctly determine the position in the
           # test queue that we are at and post it in a bot comment on the pull request
-          comments = get_comments(req['number'], req['base']['repo']['name'])
+          comments = get_comments(req['number'], repo)
 
-          bot_comment = get_comment_with_prefix(req['number'], req['base']['repo']['name'], settings['test_prefix'], comments)
+          bot_comment = get_comment_with_prefix(req['number'], repo, settings['test_prefix'], comments)
           if bot_comment
             fields = extract_bot_comment_fields(bot_comment['body'], settings)
             if (waiting_in_queue_state?(fields[:state]))
@@ -2053,17 +2059,26 @@ popd
               skipped_count_branch[settings['name']] = 0 if skipped_count_branch[settings['name']].nil?
               skipped_count_branch[settings['name']] += 1
               queued_comment = compose_bot_comment(settings['test_prefix'], :state => :wait_in_queue, :content => waiting_in_queue_comment_segment(skipped_count_branch[settings['name']].to_s))
-              create_or_update_comment(req['number'], req['base']['repo']['name'], settings['test_prefix'], queued_comment , comments)
-              $stderr.puts "  Pull ##{req['number']} in repo '#{req['base']['repo']['name']}' is at build position ##{skipped_count_branch[settings['name']]}"
+              pull_request_statuses[:enqueued][req['html_url']][:title] = req['title'].force_encoding("UTF-8")
+              pull_request_statuses[:enqueued][req['html_url']][:queue_pos] = skipped_count_branch[settings['name']]
+              pull_request_statuses[:enqueued][req['html_url']][:repo] = repo
+              create_or_update_comment(req['number'], repo, settings['test_prefix'], queued_comment , comments)
+              $stderr.puts "  Pull ##{req['number']} in repo '#{repo}' is at build position ##{skipped_count_branch[settings['name']]}"
               # Get ahead of the game and pretest requests
               if settings['pretest_settings_key'] && settings['pretest_comment'] && settings['pretest_queue_threshold'] && (skipped_count_branch[settings['name']] >= settings['pretest_queue_threshold'])
                 trusted_trigger_time, _ = get_trusted_trigger_time(req, comments, Properties['settings'][settings['pretest_settings_key']])
-                create_or_update_comment(req['number'], req['base']['repo']['name'], settings['pretest_comment'].gsub('[', '\[').gsub(']', '\]'), settings['pretest_comment'], comments) unless trusted_trigger_time
+                create_or_update_comment(req['number'], repo, settings['pretest_comment'].gsub('[', '\[').gsub(']', '\]'), settings['pretest_comment'], comments) unless trusted_trigger_time
               end
+            elsif fields[:state] == :running
+              pull_request_statuses[:running][req['html_url']][:title] = req['title'].force_encoding("UTF-8")
+              pull_request_statuses[:running][req['html_url']][:status] = "merging"
+              pull_request_statuses[:running][req['html_url']][:repo] = repo
             end
           end
         end
       end
+      # Commit merge queue records to disk
+      IO.write(MERGE_QUEUE_RECORD, pull_request_statuses.to_json, {:mode => 'w'})
     end
   end
 
