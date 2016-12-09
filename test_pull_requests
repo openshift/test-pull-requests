@@ -1503,7 +1503,6 @@ popd
 
       updated_comment = nil
       status = nil
-      build_url = nil
       # Find the bot comment for this pull request (or create one)
       process_or_create_comment(id, base_repo, settings, comments) do |comment_id, comment, comment_updated_at|
         submit_test_job = false
@@ -1781,13 +1780,13 @@ popd
           # reflect that
           recreate_comment(id, comment_id, base_repo, updated_comment)
           repo_to_pull_request.each do |repo, pull_request|
-            if status && build_url
+            if status && fields[:build_url]
               # One of the literal transitions we specify is the transition from running
               # tests to reporting the results, so if a result has been specified we
               # furthermore know that we are transitiong into the post-test state and can
               # update the GitHub pull request status
               commit = last_commit_for_pull_id(pull_request['number'], repo)
-              update_status(settings['test_prefix'], commit['sha'], repo, status, build_url, (status == 'success') ? 'Passed' : 'Failed')
+              update_status(settings['test_prefix'], commit['sha'], repo, status, fields[:build_url], (status == 'success') ? 'Passed' : 'Failed')
             end
             next if repo == base_repo
             # Update coreq comments with appropriate base commit ID
@@ -1805,7 +1804,6 @@ popd
             if s['pretest_settings_key'] && merge_pretest_success && all_coreq_triggers_trusted
               if Properties['settings'][s['pretest_settings_key']]['name'] == settings['name']
                 if fields[:state] == :success
-                  build_url = fields[:build_url]
                   trusted_trigger_time, trigger_login = get_trusted_trigger_time(req, comments, s)
                   if trusted_trigger_time
                     begin
@@ -1814,7 +1812,7 @@ popd
                       end
                       repo_to_pull_request.each do |repo, pull_request|
                         $stderr.puts "\n*******Merging pretested pull request: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{repo}/pull/#{pull_request['number']} "
-                        merge_pull_request(pull_request['number'], repo, s, build_url)
+                        merge_pull_request(pull_request['number'], repo, s, fields[:build_url])
                       end
                     rescue Exception => e
                       $stderr.puts e.message
