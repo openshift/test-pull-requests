@@ -309,8 +309,8 @@ def waiting_for_stable_build_comment_segment(branch, settings)
 end
 
 # Bot comment field composition helper
-def waiting_in_queue_comment_segment(branch_name)
-  "#{CONTENT_WAITING_IN_QUEUE} #{branch_name}"
+def waiting_in_queue_comment_segment(position)
+  "#{CONTENT_WAITING_IN_QUEUE} #{position}"
 end
 
 # Constructs a "standard" format bot comment from the provided test
