@@ -15,12 +15,12 @@
 
 require 'rubygems'
 require 'uri'
+require 'cgi'
 require 'hub'
 require 'pp'
 require 'net/https'
 require 'getoptlong'
 require 'time'
-require 'cgi'
 require 'json'
 
 def usage
@@ -2057,7 +2057,7 @@ popd
               skipped_count_branch[settings['name']] = 0 if skipped_count_branch[settings['name']].nil?
               skipped_count_branch[settings['name']] += 1
               queued_comment = compose_bot_comment(settings['test_prefix'], :state => :wait_in_queue, :content => waiting_in_queue_comment_segment(skipped_count_branch[settings['name']].to_s))
-              pull_request_statuses[:enqueued][req['html_url']][:title] = req['title'].force_encoding("UTF-8")
+              pull_request_statuses[:enqueued][req['html_url']][:title] = CGI.escapeHTML(req['title'].force_encoding("UTF-8"))
               pull_request_statuses[:enqueued][req['html_url']][:queue_pos] = skipped_count_branch[settings['name']]
               pull_request_statuses[:enqueued][req['html_url']][:repo] = repo
               create_or_update_comment(req['number'], repo, settings['test_prefix'], queued_comment , comments)
@@ -2068,7 +2068,7 @@ popd
                 create_or_update_comment(req['number'], repo, settings['pretest_comment'].gsub('[', '\[').gsub(']', '\]'), settings['pretest_comment'], comments) unless trusted_trigger_time
               end
             elsif fields[:state] == :running
-              pull_request_statuses[:running][req['html_url']][:title] = req['title'].force_encoding("UTF-8")
+              pull_request_statuses[:running][req['html_url']][:title] = CGI.escapeHTML(req['title'].force_encoding("UTF-8"))
               pull_request_statuses[:running][req['html_url']][:status] = "merging"
               pull_request_statuses[:running][req['html_url']][:repo] = repo
             end
