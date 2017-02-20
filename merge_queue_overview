@@ -93,6 +93,9 @@ if config['repo_groups']
     queue_records['enqueued'] = queue_records_from_file['enqueued'].select do |link, data|
       config['repos_to_groups'][data['repo']] && config['repos_to_groups'][data['repo']] == group
     end if queue_records_from_file['enqueued']
+    queue_records['failure'] = queue_records_from_file['failure'].select do |link, data|
+      config['repos_to_groups'][data['repo']] && config['repos_to_groups'][data['repo']] == group
+    end if queue_records_from_file['failure']
     write_merge_queue_overview(settings['merge_queue_name'], config, queue_records, erb)
   end
   # Handle the case where ungrouped and grouped repos are handled by same config
@@ -106,10 +109,14 @@ if config['repo_groups']
   queue_records['enqueued'] = queue_records_from_file['enqueued'].select do |link, data|
     config['repos_to_groups'][data['repo']].nil? || config['repos_to_groups'][data['repo']].empty?
   end if queue_records_from_file['enqueued']
-  if queue_records['closed_prs'] || queue_records['running'] || queue_records['enqueued']
+  queue_records['failure'] = queue_records_from_file['failure'].select do |link, data|
+    config['repos_to_groups'][data['repo']].nil? || config['repos_to_groups'][data['repo']].empty?
+  end if queue_records_from_file['failure']
+  if queue_records['closed_prs'] || queue_records['running'] || queue_records['enqueued'] || queue_records['failure']
+    puts "qr: #{queue_records}"
     write_merge_queue_overview(config['merge_queue_name'], config, queue_records, erb)
   end
-else
+  else
   write_merge_queue_overview(config['merge_queue_name'], config, queue_records_from_file, erb)
 end
 

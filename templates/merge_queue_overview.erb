@@ -55,7 +55,7 @@
 
 <div class="container">
 <%
-  if queue_records['enqueued'] or queue_records['running']
+  if queue_records['enqueued'] or queue_records['running'] or queue_records['failure']
 %>
 <div class="table-responsive">
 <table class="table table-normal table-condensed">
@@ -81,8 +81,8 @@
 <%
     if queue_records['enqueued'] && !queue_records['enqueued'].empty?
 %>
+<details open=""><summary>Waiting</summary>
 <table class="table table-normal table-condensed">
-  <tr><th colspan="2">Waiting</th></tr>
 <%
       queue_records['enqueued'].sort_by{ |pr,pd| pd['queue_pos'] || ((pd['status'] == 'merging') ? 0 : 9999) }.each do |pr_link, pr_data|
         if pr_data['title'] && pr_data['status'] != 'merging'
@@ -96,6 +96,24 @@
       end
 %>
 </table>
+</details>
+<%
+    end
+    if queue_records['failure'] && !queue_records['failure'].empty?
+%>
+<details open="false"><summary>Failures</summary>
+<table class="table table-normal table-condensed">
+<%
+      queue_records['failure'].each do |pr_link, pr_data|
+%>
+<tr>
+<td><a href='<%=pr_link%>'><%=pr_data['title']%></a></td>
+</tr>
+<%
+      end
+%>
+</table>
+</details>
 <%
     end
 %>
