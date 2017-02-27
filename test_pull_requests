@@ -2089,7 +2089,8 @@ popd
       # First, get the next jenkins build number
       next_build_num = get_next_build(branch, settings)
 
-      pull_id_params = "&BRANCH=#{branch}"
+      branch_param = settings["branch_param"] || Properties["branch_param"] || "BRANCH"
+      pull_id_params = "&#{branch_param}=#{branch}"
       first_valid_repo = nil
       repo_to_pull_request.each do |repo, pull_request|
         pull_id_param = settings['repo_to_pull_id_param'][repo]
