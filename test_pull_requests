@@ -45,6 +45,8 @@ Options:
     Marks a pull request with success status for the testonlyextended_settings configuration
 --merge_pretest_success
     Merges all of the pretested pull requests
+--rate_limit
+    Show current GitHub API rate limit stats
 --repo <repo>
     The repo of the pull request
 USAGE
@@ -59,6 +61,7 @@ opts = GetoptLong.new(
 ["--mark_test_success",             GetoptLong::REQUIRED_ARGUMENT],
 ["--mark_testonlyextended_success", GetoptLong::REQUIRED_ARGUMENT],
 ["--merge_pretest_success",         GetoptLong::NO_ARGUMENT],
+["--rate_limit",                    GetoptLong::NO_ARGUMENT],
 ["--repo",                          GetoptLong::REQUIRED_ARGUMENT],
 ["--config",                        GetoptLong::REQUIRED_ARGUMENT]
 )
@@ -80,6 +83,7 @@ test_merge_pull_id = args[:test_merge_pull_request]
 mark_test_success_pull_id = args[:mark_test_success]
 mark_testonlyextended_success_pull_id = args[:mark_testonlyextended_success]
 pull_id_repo = args[:repo]
+rate_limit = args[:rate_limit]
 config = args[:config]
 merge_pretest_success = args[:merge_pretest_success]
 
@@ -134,6 +138,9 @@ end
 
 GITHUB_API_BASE_URL = 'https://api.github.com'
 GITHUB_BASE_URL = 'https://github.com'
+
+GITHUB_RATE_LIMIT_MINIMUM = 420
+JOB_INTERVAL = 60 * 8 #seconds
 
 CONTENT_WAITING_IN_QUEUE = "Waiting: You are in the build queue at position:"
 CONTENT_WAITING_DETERMINING_QUEUE_POS = "Waiting: Determining build queue position"
@@ -346,6 +353,36 @@ end
 module Hub
   class GitHubAPI
 
+    def rate_limit_remaining(force = false)
+      if !@rate_limit_remaining || !@rate_limit_reset || force
+        # rate limit is updated in `perform_request`, called from `get`
+        #
+        # this API endpoint doesn't count against the rate limit
+        _ = get "#{GITHUB_API_BASE_URL}/rate_limit"
+      end
+      @rate_limit_remaining
+    end
+
+    def rate_limit_reset
+      rate_limit_remaining
+      @rate_limit_reset
+    end
+
+    def rate_limit_reset_in
+      rate_limit_reset - Time.now.to_i
+    end
+
+    # If we still have 80% of the minimum rate limit remaining and less
+    # than 8 minutes (JOB_INTERVAL) until the rate limit resets, we may
+    # as well try anyway.
+    def run_anyway?
+      (rate_limit_remaining >= GITHUB_RATE_LIMIT_MINIMUM * 0.80) && rate_limit_reset_in < JOB_INTERVAL
+    end
+
+    def rate_limit_too_low?
+      rate_limit_remaining < GITHUB_RATE_LIMIT_MINIMUM
+    end
+
     # team_url_and_name returns the user-friendly URL and name for a GitHub team.
     # If the team ID is found in the $team_cache, we will simply use it. If it
     # is not, however, we will need to expend an API request to list all of the
@@ -382,12 +419,6 @@ module Hub
       while (!last_pull_requests || last_pull_requests.length == 100)
         (1..num_tries).each do |i|
           res = get "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/pulls?page=#{page}&per_page=100"
-          rate_limit_remaining = res.header['X-RateLimit-Remaining']
-          $stderr.puts "Rate limit remaining: #{rate_limit_remaining}"
-          if rate_limit_remaining && rate_limit_remaining.to_i < 1000
-            $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
-            exit 0
-          end
           if res.success?
             last_pull_requests = res.data
             pull_requests += last_pull_requests
@@ -920,6 +951,11 @@ popd
       exit 1 if exit_code != 0
     end
 
+    def update_rate_limit(res)
+      @rate_limit_remaining = res.header['X-RateLimit-Remaining'].to_i if res.header['X-RateLimit-Remaining']
+      @rate_limit_reset = res.header['X-RateLimit-Reset'].to_i if res.header['X-RateLimit-Reset']
+    end
+
     def put url, params = nil
       perform_request url, :Put do |req|
         if params
@@ -961,12 +997,14 @@ popd
       begin
         res = http.start { http.request(req) }
         res.extend ResponseMethods
+        # Update @rate_limit_remaining whenever we get it in a
+        # response header
+        update_rate_limit(res)
         return res
       rescue SocketError => err
         raise Context::FatalError, "error with #{type.to_s.upcase} #{url} (#{err.message})"
       end
     end
-
 
     def delete url
       perform_request url, :Delete do |req|
@@ -2323,9 +2361,21 @@ elsif local_merge_pull_id
   @api_client.local_merge_pull_request(local_merge_pull_id, pull_id_repo)
 elsif test_merge_pull_id
   @api_client.test_merge_pull_request(test_merge_pull_id, pull_id_repo, Properties['settings']['merge_test_settings'])
+elsif rate_limit
+  puts "Remaining: #{@api_client.rate_limit_remaining}"
+  puts "Resets in: #{@api_client.rate_limit_reset_in}s, at #{Time.at(@api_client.rate_limit_reset).to_datetime} (#{@api_client.rate_limit_reset})"
+  puts "Rate limit is #{@api_client.rate_limit_too_low? ? "" : "not "}too low."
+  puts "Would #{"not " if @api_client.rate_limit_too_low? && !@api_client.run_anyway?}run#{" anyway" if @api_client.rate_limit_too_low?}."
 else
   # Process all the pull requests for testing
   $stderr.puts "Processing pull requests..."
-  @api_client.process_pull_requests(merge_pretest_success)
+  $stderr.puts "Rate limit remaining: #{@api_client.rate_limit_remaining}"
+  starting_limit = @api_client.rate_limit_remaining
+  if @api_client.rate_limit_too_low? && !@api_client.run_anyway?
+    $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
+  else
+    @api_client.process_pull_requests(merge_pretest_success)
+  end
+  $stderr.puts "Rate limit remaining: #{@api_client.rate_limit_remaining}; delta: #{starting_limit - @api_client.rate_limit_remaining}"
   $stderr.puts "\nDone\n"
 end
