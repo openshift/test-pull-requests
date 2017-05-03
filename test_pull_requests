@@ -1229,7 +1229,7 @@ popd
 
     def get_extended_tests(pull_request, comments, branch, settings)
       extended_tests = []
-      if settings['allow_multiple'] && branch_settings(branch, settings)['extended_tests_param']
+      if branch_settings(branch, settings)['extended_tests_param']
         extended_prefix = settings['extended_prefix'] || 'extended'
         extended_regex = /\[#{extended_prefix} *:( *[^,\[\]]+ *(, *[^,\[\]]+ *)*)\]/i
         if pull_request['title'] =~ extended_regex
