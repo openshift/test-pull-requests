@@ -59,6 +59,27 @@ p {margin: 0 0 15px;}
   font-size: 12px
 }
 
+details {
+  margin-bottom: 20px;
+}
+summary {
+  background-color: #ddd;
+  /* font-family: "Open Sans",sans-serif; */
+  padding: 5px;
+  font-weight: bold;
+  width: 100%;
+}
+summary::before {
+  content: '+';
+  font-family: 'mono';
+  padding-right: 0.5em
+}
+details[open] > summary::before {
+  content: '-';
+  font-family: 'mono';
+  padding-right: 0.5em
+}
+
 pre {
   border:none;
   background-color: transparent;

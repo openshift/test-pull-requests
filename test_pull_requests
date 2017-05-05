@@ -98,7 +98,7 @@ else
 end
 
 MERGE_QUEUE_RECORD_FILENAME = PROPERTIES_LOCATION[/[^\w]+\.(.+\.json)/, 1]
-MERGE_QUEUE_RECORD = File.expand_path("~/merge_queue_records/#{MERGE_QUEUE_RECORD_FILENAME}")
+MERGE_QUEUE_RECORD = File.expand_path("/tmp/merge_queue_records/#{MERGE_QUEUE_RECORD_FILENAME}")
 
 # Branches and repos must be supported for all settings
 $branches = []
@@ -2078,7 +2078,7 @@ popd
         branch = req['base']['ref']
         repo = req['base']['repo']['name']
 
-        process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
+        # process_pull_request(req, updated_at, changed_after_eval, comments, settings, merge_pretest_success)
 
         submitted_tests = submitted_tests_for_branch(branch)
 
@@ -2110,6 +2110,10 @@ popd
               pull_request_statuses[:running][req['html_url']][:title] = CGI.escapeHTML(req['title'].force_encoding("UTF-8"))
               pull_request_statuses[:running][req['html_url']][:status] = "merging"
               pull_request_statuses[:running][req['html_url']][:repo] = repo
+            elsif fields[:state] == :failure
+              pull_request_statuses[:failure][req['html_url']][:title] = CGI.escapeHTML(req['title'].force_encoding("UTF-8"))
+              pull_request_statuses[:failure][req['html_url']][:status] = "failed"
+              pull_request_statuses[:failure][req['html_url']][:repo] = repo
             end
           end
         end
