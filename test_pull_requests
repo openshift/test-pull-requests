@@ -139,7 +139,7 @@ end
 GITHUB_API_BASE_URL = 'https://api.github.com'
 GITHUB_BASE_URL = 'https://github.com'
 
-GITHUB_RATE_LIMIT_MINIMUM = 420
+GITHUB_RATE_LIMIT_MINIMUM = 850
 JOB_INTERVAL = 60 * 8 #seconds
 
 CONTENT_WAITING_IN_QUEUE = "Waiting: You are in the build queue at position:"
@@ -2352,6 +2352,9 @@ end
   GitHubAPI.new file_config, :app_url => Properties['jenkins_host']
 end
 
+$stderr.puts "Rate limit remaining: #{@api_client.rate_limit_remaining}"
+starting_limit = @api_client.rate_limit_remaining
+
 if merge_pull_id
   @api_client.merge_pull_request(merge_pull_id, pull_id_repo, Properties['settings']['merge_test_settings'])
 elsif mark_test_success_pull_id
@@ -2363,20 +2366,20 @@ elsif local_merge_pull_id
 elsif test_merge_pull_id
   @api_client.test_merge_pull_request(test_merge_pull_id, pull_id_repo, Properties['settings']['merge_test_settings'])
 elsif rate_limit
-  puts "Remaining: #{@api_client.rate_limit_remaining}"
   puts "Resets in: #{@api_client.rate_limit_reset_in}s, at #{Time.at(@api_client.rate_limit_reset).to_datetime} (#{@api_client.rate_limit_reset})"
   puts "Rate limit is #{@api_client.rate_limit_too_low? ? "" : "not "}too low."
   puts "Would #{"not " if @api_client.rate_limit_too_low? && !@api_client.run_anyway?}run#{" anyway" if @api_client.rate_limit_too_low?}."
 else
   # Process all the pull requests for testing
   $stderr.puts "Processing pull requests..."
-  $stderr.puts "Rate limit remaining: #{@api_client.rate_limit_remaining}"
-  starting_limit = @api_client.rate_limit_remaining
   if @api_client.rate_limit_too_low? && !@api_client.run_anyway?
-    $stderr.puts "WARNING: Skipping processing due to rate limit approaching!"
+    $stderr.puts "WARNING: Skipping processing due to rate limit approaching! Rate limit reset is in #{@api_client.rate_limit_reset_in}s."
   else
+    if @api_client.rate_limit_too_low? && @api_client.run_anyway?
+      $stderr.puts "WARNING: Rate limit is low, but running anyway because rate limit reset is in #{@api_client.rate_limit_reset_in}s and rate limit is more than 80% of minimum."
+    end
     @api_client.process_pull_requests(merge_pretest_success)
   end
-  $stderr.puts "Rate limit remaining: #{@api_client.rate_limit_remaining}; delta: #{starting_limit - @api_client.rate_limit_remaining}"
   $stderr.puts "\nDone\n"
 end
+$stderr.puts "Rate limit remaining: #{@api_client.rate_limit_remaining}; delta: #{starting_limit - @api_client.rate_limit_remaining}"
