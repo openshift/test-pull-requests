@@ -97,7 +97,7 @@ else
   exit 255
 end
 
-MERGE_QUEUE_RECORD_FILENAME = PROPERTIES_LOCATION[/[^\w]+\.(.+\.json)/, 1]
+MERGE_QUEUE_RECORD_FILENAME = File.split(PROPERTIES_LOCATION).last.gsub(/^\./, '') 
 MERGE_QUEUE_RECORD = File.expand_path("~/merge_queue_records/#{MERGE_QUEUE_RECORD_FILENAME}")
 
 # Branches and repos must be supported for all settings
