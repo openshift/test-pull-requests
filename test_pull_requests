@@ -831,6 +831,14 @@ module Hub
       (1..num_tries).each do |i|
         res = put "#{GITHUB_API_BASE_URL}/repos/#{Properties['github_user']}/#{repo}/pulls/#{pull_id}/merge", params
         break if res.success?
+        if rate_limit_remaining < 10
+          $stderr.puts "  ************ !!!!!!!!!"
+          $stderr.puts "  *** Merge failed due to rate limit exhaustion. Sleeping until rate limit reset in #{rate_limit_reset_in}s, then retrying."
+          while rate_limit_remaining < 10
+            $stderr.puts "      Sleeping (#{rate_limit_reset_in}s remaining)..."
+            sleep (rate_limit_reset_in < 60 ? rate_limit_reset_in : 60)
+          end
+        end
         if i < num_tries
           sleep sleep_time
           sleep_time *= 2
