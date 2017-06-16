@@ -170,6 +170,7 @@ PATTERN_WAITING_ON_BUILD_QUEUE = /^#{CONTENT_WAITING_IN_QUEUE} \d+/
 BOT_COMMENT_FIELDS = {
   :build_url => :no_prefix,
   :base_commit => 'Base Commit:',
+  :pr_branch_commit => 'PR Branch Commit:',
   :extended_tests => 'Extended Tests:',
 }
 
@@ -288,6 +289,7 @@ def extract_bot_comment_fields(bot_comment_body, settings=nil)
 
   build_url = bot_comment_body[build_url_pattern, 1]
   base_commit = bot_comment_body[/ \(Base Commit: ([a-f0-9]{40})\)/, 1]
+  pr_branch_commit = bot_comment_body[/ \(PR Branch Commit: ([a-f0-9]{40})\)/, 1]
   extended_tests = bot_comment_body[/ (\(Extended Tests: .+)/, 1]
 
   return {
@@ -295,6 +297,7 @@ def extract_bot_comment_fields(bot_comment_body, settings=nil)
     :content => content,
     :build_url => build_url,
     :base_commit => base_commit,
+    :pr_branch_commit => pr_branch_commit,
     :extended_tests => extended_tests,
     :state => state
   }
@@ -711,10 +714,14 @@ module Hub
           else
             pretest_fields = extract_bot_comment_fields(pretest_comment['body'], pretest_settings)
             pretest_pr_base_commit = base_repo_commit_for_pull_req(sub_pull_request)
+            pretest_pr_branch_commit = last_commit_for_pull_id(sub_pull_request['number'], repo)
             if (pretest_fields[:state] == :success &&
-                pretest_fields[:base_commit] == pretest_pr_base_commit['sha'])
-              # Store pre-merge comment fields to carry the build url and base commit pull_id through to SUCCESS
-              repo_to_comment_fields[repo] = {:state => :success, :build_url => pretest_fields[:build_url], :base_commit => pretest_fields[:base_commit]}
+                pretest_fields[:base_commit] == pretest_pr_base_commit['sha'] &&
+                pretest_fields[:pr_branch_commit] == pretest_pr_branch_commit['sha'])
+              # Store pre-merge comment fields to carry the build url,
+              # base repo HEAD sha and pull request HEAD sha through
+              # to SUCCESS
+              repo_to_comment_fields[repo] = {:state => :success, :build_url => pretest_fields[:build_url], :base_commit => pretest_fields[:base_commit], :pr_branch_commit => pretest_fields[:pr_branch_commit]}
             else
               can_skip_merge_tests = false
             end
@@ -736,7 +743,7 @@ module Hub
     end
 
     # Check if we can dequeue and submit the next tests to Jenkins, and if so, update the comment
-    def validate_and_submit_tests(repo_to_pull_request, base_repo, branch, pull_id, comment_id, extended_tests, all_coreq_triggers_trusted, comments, settings, base_commit=nil)
+    def validate_and_submit_tests(repo_to_pull_request, base_repo, branch, pull_id, comment_id, extended_tests, all_coreq_triggers_trusted, comments, settings, base_commit=nil, pr_branch_commit=nil)
       submitted_tests = submitted_tests_for_branch(branch)
       unless settings['allow_multiple']
         if submitted_tests[settings['name']] || JenkinsAPI.previous_build_running?(branch, settings, base_repo)
@@ -753,7 +760,7 @@ module Hub
         build_url = JenkinsAPI.submit_jenkins_job(repo_to_pull_request, branch, extended_tests, settings)
 
         extended_tests = extended_tests.join(', ') unless extended_tests.empty?
-        new_fields = {:state => :running, :build_url => build_url, :extended_tests => extended_tests, :base_commit => base_commit}
+        new_fields = {:state => :running, :build_url => build_url, :extended_tests => extended_tests, :base_commit => base_commit, :pr_branch_commit => pr_branch_commit}
         running_comment = compose_bot_comment(settings['test_prefix'], new_fields)
         # Update the comments to reflect the new tests running
         recreate_comment(pull_id, comment_id, base_repo, running_comment)
@@ -761,7 +768,9 @@ module Hub
         repo_to_pull_request.each do |repo, pull_request|
           if repo != base_repo
             pr_base_commit = base_repo_commit_for_pull_req(pull_request)
+            pr_branch_commit = last_commit_for_pull_id(pull_id, repo)
             new_fields[:base_commit] = pr_base_commit['sha']
+            new_fields[:pr_branch_commit] = pr_branch_commit['sha']
             running_comment = compose_bot_comment(settings['test_prefix'], new_fields)
             process_or_create_comment(pull_request['number'], repo, settings) do |c_id, comment, comment_updated_at|
               update_comment(c_id, repo, running_comment)
@@ -873,15 +882,17 @@ module Hub
     # Tries to extract the commit ID for the base repo from the bot
     # comments by matching the build URL from the jenkins environment
     # to the build URL in the PR bot comments
-    def base_commit_id_for_merge(pull_request, settings=nil)
+    def commit_ids_for_merge(pull_request, settings=nil)
       repo = pull_request['base']['repo']['name']
       base_commit = nil
+      pr_branch_commit = nil
       num_tries = 5
       sleep_time = SLEEP_TIME
       bot_comment = nil
       $stderr.puts "  Checking if current base repo commit ID matches what we expect"
       if ENV['BUILD_URL'].to_s.empty?
         base_commit = ''
+        pr_branch_commit = ''
       else
         (1..num_tries).each do |i|
           comment_pattern = /#{CONTENT_RUNNING} +\(#{ENV['BUILD_URL']}\)/
@@ -894,6 +905,10 @@ module Hub
             end
             if fields[:base_commit]
               base_commit = fields[:base_commit]
+              break
+            end
+            if fields[:pr_branch_commit]
+              pr_branch_commit = fields[:pr_branch_commit]
               break
             end
           end
@@ -914,7 +929,19 @@ module Hub
           raise "Base repository commit ID #{pr_base_commit['sha']} doesn't match evaluated commit ID #{base_commit}"
         end
       end
-      base_commit
+
+      if pr_branch_commit.nil?
+        $stderr.puts "  No matching bot comment was found for pull request ##{pull_request['number']} on repo #{repo}"
+        pr_branch_commit = ''
+      elsif !pr_branch_commit.empty?
+        pr_branch_base_commit = last_commit_for_pull_id(pull_request['number'], repo)
+        if pr_branch_commit != pr_branch_base_commit['sha']
+          delete_comment(bot_comment['id'], repo) if bot_comment
+          raise "Base repository commit ID #{pr_branch_base_commit['sha']} doesn't match evaluated commit ID #{pr_branch_commit}"
+        end
+      end
+
+      [base_commit, pr_branch_commit]
     end
 
     def local_merge_pull_request(pull_id, repo)
@@ -923,7 +950,7 @@ module Hub
         # TODO: a bug lives here: if the test job isn't referenced in
         # a pretest_settings_key, we can ignore all the base_commit
         # stuff here.
-        base_commit = base_commit_id_for_merge(pull_request)
+        base_commit, pr_branch_commit = commit_ids_for_merge(pull_request)
       rescue Exception => e
         $stderr.puts e.message
         exit 1
@@ -931,7 +958,11 @@ module Hub
       if base_commit.empty?
         $stderr.puts "Local merging pull request ##{pull_id} for repo '#{repo}'"
       else
-        $stderr.puts "Local merging pull request ##{pull_id} for repo '#{repo}' against base repo commit id #{base_commit}"
+        if pr_branch_commit.empty?
+          $stderr.puts "Local merging pull request ##{pull_id} for repo '#{repo}' against base repo commit id #{base_commit}"
+        else
+          $stderr.puts "Local merging pull request ##{pull_id} for repo '#{repo}' against base repo commit id #{base_commit} from pr branch commit id #{pr_branch_commit}"
+        end
       end
       merge_command = %{
 set -ex
@@ -1508,6 +1539,7 @@ popd
       login = req['user']['login']
       repo_to_pull_request = {base_repo => req}
       pr_base_commit = base_repo_commit_for_pull_req(req)
+      pr_branch_commit = last_commit_for_pull_id(req['number'], base_repo)
       all_coreq_triggers_trusted = true
 
       $stderr.puts "\n****Processing #{settings['name'].upcase} in '#{branch}' branch for user '#{login}' on: #{GITHUB_BASE_URL}/#{Properties['github_user']}/#{base_repo}/pull/#{id}"
@@ -1812,7 +1844,7 @@ popd
           # Check for pretest_settings_key, so we might skip a round
           # of tests prior to merge
           extended_tests = get_extended_tests(req, comments, branch, settings)
-          validate_and_submit_tests(repo_to_pull_request, base_repo, branch, id, comment_id, extended_tests, all_coreq_triggers_trusted, comments, settings, pr_base_commit['sha'])
+          validate_and_submit_tests(repo_to_pull_request, base_repo, branch, id, comment_id, extended_tests, all_coreq_triggers_trusted, comments, settings, pr_base_commit['sha'], pr_branch_commit['sha'])
         elsif updated_comment
           # If we have an `updated_comment`, we have determined which state we want to
           # transition into above literally and simply need to update the comment to
@@ -1831,7 +1863,9 @@ popd
             # Update coreq comments with appropriate base commit ID
             coreq_fields = extract_bot_comment_fields(updated_comment, settings)
             cr_bot_comment = get_comment_with_prefix(pull_request['number'], repo, settings['test_prefix'])
-            coreq_fields[:base_commit] = extract_bot_comment_fields(cr_bot_comment['body'], settings)[:base_commit]
+            cr_bot_comment_fields = extract_bot_comment_fields(cr_bot_comment['body'], settings)
+            coreq_fields[:base_commit] = cr_bot_comment_fields[:base_commit]
+            coreq_fields[:pr_branch_commit] = cr_bot_comment_fields[:pr_branch_commit]
             updated_comment = compose_bot_comment(settings['test_prefix'], coreq_fields)
             recreate_comment_with_prefix(pull_request['number'], repo, settings['test_prefix'], updated_comment)
           end
@@ -2099,7 +2133,7 @@ popd
               pull_request_statuses[:enqueued][req['html_url']][:title] = CGI.escapeHTML(req['title'].force_encoding("UTF-8"))
               pull_request_statuses[:enqueued][req['html_url']][:queue_pos] = skipped_count_branch[settings['name']]
               pull_request_statuses[:enqueued][req['html_url']][:repo] = repo
-              create_or_update_comment(req['number'], repo, settings['test_prefix'], queued_comment , comments)
+              create_or_update_comment(req['number'], repo, settings['test_prefix'], queued_comment, comments)
               $stderr.puts "  Pull ##{req['number']} in repo '#{repo}' is at build position ##{skipped_count_branch[settings['name']]}"
               # Get ahead of the game and pretest requests
               if settings['pretest_settings_key'] && settings['pretest_comment'] && settings['pretest_queue_threshold'] && (skipped_count_branch[settings['name']] >= settings['pretest_queue_threshold'])
