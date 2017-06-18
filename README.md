@@ -5,6 +5,10 @@ Test Pull Requests
 
 Utility for serially testing and merging pull requests in conjunction with Jenkins.
 
+## Requirements
+ * At least Ruby 2.1.x
+ * A Github account
+
 ## Typical User Workflow
  * Write some code, fix bugs locally, submit your pull requests
  * Get your changes reviewed
@@ -52,6 +56,14 @@ Utility for serially testing and merging pull requests in conjunction with Jenki
       ```
 
  * Run `test_pull_requests` as a Jenkins or `cron` job.  Note that GitHub is rate limited but typical projects can still run this script every few mins without running out of requests.
+
+### Additional considerations for RHEL
+ * Your version of RHEL might not have a recent Ruby by default. To work around this, you can:
+   * enable the Software Collections (SCL) repos and install `scl-utils`, and the Ruby version of your choice, e.g. `rh-ruby23` and `rh-ruby23-rubygems`
+   * run `test_pull_requests` like:
+   ```
+   echo "test_pull_requests --SOME_OPTIONS" | scl enable rh-ruby23 -
+   ```
 
 ### Setup for merge_queue_overview
  * Add `merge_queue_overview` to your Jenkins system and make sure it's executable
