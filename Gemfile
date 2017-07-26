@@ -1,4 +1,6 @@
 source 'https://rubygems.org'
 
 gem 'rake'
-gem 'hub'
+gem 'octokit'
+gem 'faraday-http-cache'
+
