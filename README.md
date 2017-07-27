@@ -59,10 +59,17 @@ Utility for serially testing and merging pull requests in conjunction with Jenki
 
 ### Additional considerations for RHEL
  * Your version of RHEL might not have a recent Ruby by default. To work around this, you can:
-   * enable the Software Collections (SCL) repos and install `scl-utils`, and the Ruby version of your choice, e.g. `rh-ruby23` and `rh-ruby23-rubygems`
+   * enable the Software Collections (SCL) repos and install `scl-utils`, and the Ruby version of your choice, e.g. `rh-ruby23`, `rh-ruby23-rubygems`, and `rh-ruby23-rubygem-bundler`
    * run `test_pull_requests` like:
-   ```
+   ```bash
    echo "test_pull_requests --SOME_OPTIONS" | scl enable rh-ruby23 -
+   ```
+   * or create a wrapper script:
+   ```bash
+   #!/usr/bin/env sh
+   
+   source scl_source enable rh-ruby23
+   /path/to/test_pull_requests "$@"
    ```
 
 ### Setup for merge_queue_overview
