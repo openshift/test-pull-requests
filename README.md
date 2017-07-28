@@ -27,6 +27,8 @@ Utility for serially testing and merging pull requests in conjunction with Jenki
 
 ## Setup
  * Add `test_pull_requests` to your Jenkins system and make sure it's executable
+ * Add `test_pull_requests_ruby_wrapper.sh` to your Jenkins system and make sure it's executable and in the Jenkins user's `$PATH`
+   * If you're running RHEL, follow the instructions in the [Additional considerations for RHEL](#additional-considerations-for-rhel) now.
  * Add `.test_pull_requests.json` to `$JENKINS_HOME`
  * Configure `.test_pull_requests.json` according to your system.  You can decide whether to support `[test]` and/or `[merge]` as well as potentially add other flags for your use cases.
  * For each test group you'll then need to configure your Jenkins to have a corresponding set of jobs.  The general requirements are:
@@ -59,18 +61,9 @@ Utility for serially testing and merging pull requests in conjunction with Jenki
 
 ### Additional considerations for RHEL
  * Your version of RHEL might not have a recent Ruby by default. To work around this, you can:
-   * enable the Software Collections (SCL) repos and install `scl-utils`, and the Ruby version of your choice, e.g. `rh-ruby23`, `rh-ruby23-rubygems`, and `rh-ruby23-rubygem-bundler`
-   * run `test_pull_requests` like:
-   ```bash
-   echo "test_pull_requests --SOME_OPTIONS" | scl enable rh-ruby23 -
-   ```
-   * or create a wrapper script:
-   ```bash
-   #!/usr/bin/env sh
-   
-   source scl_source enable rh-ruby23
-   /path/to/test_pull_requests "$@"
-   ```
+   * Enable the Software Collections (SCL) repos and install `scl-utils`, and the Ruby version of your choice, e.g. `rh-ruby23`, `rh-ruby23-rubygems`, and `rh-ruby23-rubygem-bundler`
+     * Install the dependencies: `cd test-pull-requests ; echo "bundle install" | scl enable rh-ruby23 -`
+   * If you have more than one SCL Ruby installed, edit `test_pull_requests_ruby_wrapper.sh` so it only detects the desired Ruby version.
 
 ### Setup for merge_queue_overview
  * Add `merge_queue_overview` to your Jenkins system and make sure it's executable

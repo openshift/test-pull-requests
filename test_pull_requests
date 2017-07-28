@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env test_pull_requests_ruby_wrapper.sh
 
 # Client script for submitting pull requests for testing
 # as well as updating the test results from Jenkins.
